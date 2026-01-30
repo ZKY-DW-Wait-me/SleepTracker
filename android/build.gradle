@@ -8,6 +8,11 @@ buildscript {
         kotlinVersion = "2.1.20"
     }
     repositories {
+        // 添加阿里云镜像（放在最前面）
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        
         google()
         mavenCentral()
     }

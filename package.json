@@ -10,10 +10,26 @@
     "test": "jest"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native/new-app-screen": "0.83.1",
+    "@react-navigation/bottom-tabs": "^7.10.1",
+    "@react-navigation/native": "^7.1.28",
+    "@react-navigation/stack": "^7.6.16",
+    "@reduxjs/toolkit": "^2.11.2",
+    "@types/react-native-vector-icons": "^6.4.18",
+    "date-fns": "^4.1.0",
+    "lucide-react-native": "^0.563.0",
     "react": "19.2.0",
     "react-native": "0.83.1",
-    "@react-native/new-app-screen": "0.83.1",
-    "react-native-safe-area-context": "^5.5.2"
+    "@react-native-community/datetime-picker": "^8.3.0",
+    "react-native-chart-kit": "^6.12.0",
+    "react-native-gesture-handler": "^2.30.0",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "^4.20.0",
+    "react-native-sqlite-storage": "^6.0.1",
+    "react-native-svg": "^15.15.1",
+    "react-native-vector-icons": "^10.3.0",
+    "react-redux": "^9.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
