@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/datetimepicker": "^8.6.0",
     "@react-native/new-app-screen": "0.83.1",
     "@react-navigation/bottom-tabs": "^7.10.1",
     "@react-navigation/native": "^7.1.28",
@@ -21,7 +22,6 @@
     "lucide-react-native": "^0.563.0",
     "react": "19.2.0",
     "react-native": "0.83.1",
-    "@react-native-community/datetime-picker": "^8.3.0",
     "react-native-chart-kit": "^6.12.0",
     "react-native-gesture-handler": "^2.30.0",
     "react-native-safe-area-context": "^5.6.2",

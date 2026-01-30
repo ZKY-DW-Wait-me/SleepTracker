@@ -95,7 +95,7 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
           toValue: currentValue,
           friction: 5,
           tension: 40,
-          useNativeDriver: false,
+          useNativeDriver: true,
         }).start();
       },
       

@@ -14,8 +14,6 @@ import {
   Alert,
   TextInput,
   Modal,
-  Animated,
-  Platform,
   Share,
 } from 'react-native';
 import {
@@ -54,7 +52,7 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 // 类型
 import { SleepGoal } from '../types';
 
-// ==================== 设置项组件 ====================
+// ==================== 设置项组件（移除动画避免闪退）====================
 
 interface SettingItemProps {
   icon: React.ReactNode;
@@ -64,7 +62,6 @@ interface SettingItemProps {
   onPress?: () => void;
   rightElement?: React.ReactNode;
   danger?: boolean;
-  delay?: number;
 }
 
 const SettingItem: React.FC<SettingItemProps> = ({
@@ -75,70 +72,42 @@ const SettingItem: React.FC<SettingItemProps> = ({
   onPress,
   rightElement,
   danger = false,
-  delay = 0,
 }) => {
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(20))[0];
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        delay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
   return (
-    <Animated.View
-      style={[
-        { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
-      ]}
+    <TouchableOpacity
+      style={[styles.settingItem, onPress && styles.settingItemPressable]}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+      disabled={!onPress}
     >
-      <TouchableOpacity
-        style={[styles.settingItem, onPress && styles.settingItemPressable]}
-        onPress={onPress}
-        activeOpacity={onPress ? 0.7 : 1}
-        disabled={!onPress}
+      <View
+        style={[
+          styles.settingIcon,
+          { backgroundColor: danger ? colors.error.light + '20' : colors.primary[50] },
+        ]}
       >
-        <View
+        {icon}
+      </View>
+      <View style={styles.settingContent}>
+        <Text
           style={[
-            styles.settingIcon,
-            { backgroundColor: danger ? colors.error.light + '20' : colors.primary[50] },
+            styles.settingTitle,
+            danger && styles.settingTitleDanger,
           ]}
         >
-          {icon}
-        </View>
-        <View style={styles.settingContent}>
-          <Text
-            style={[
-              styles.settingTitle,
-              danger && styles.settingTitleDanger,
-            ]}
-          >
-            {title}
-          </Text>
-          {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
-        </View>
-        {value && <Text style={styles.settingValue}>{value}</Text>}
-        {rightElement}
-        {onPress && !rightElement && (
-          <ChevronRight
-            size={20}
-            color={danger ? colors.error.main : colors.gray[400]}
-          />
-        )}
-      </TouchableOpacity>
-    </Animated.View>
+          {title}
+        </Text>
+        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+      </View>
+      {value && <Text style={styles.settingValue}>{value}</Text>}
+      {rightElement}
+      {onPress && !rightElement && (
+        <ChevronRight
+          size={20}
+          color={danger ? colors.error.main : colors.gray[400]}
+        />
+      )}
+    </TouchableOpacity>
   );
 };
 
@@ -247,7 +216,6 @@ export const SettingsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   
   // 状态
-  const [headerOpacity] = useState(new Animated.Value(0));
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -269,12 +237,6 @@ export const SettingsScreen: React.FC = () => {
     if (!isInitialized) {
       loadSettings();
     }
-    
-    Animated.timing(headerOpacity, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
   }, []);
 
   // 切换主题
@@ -289,7 +251,6 @@ export const SettingsScreen: React.FC = () => {
     try {
       const result = await exportAllData();
       if (result.success && result.data) {
-        // 构建 CSV 内容
         const data = JSON.parse(result.data);
         const records = data.records || [];
         
@@ -310,7 +271,6 @@ export const SettingsScreen: React.FC = () => {
           ...rows.map((row: any[]) => row.map(cell => `"${cell}"`).join(',')),
         ].join('\n');
 
-        // 分享文件
         await Share.share({
           message: csvContent,
           title: 'SleepTracker 数据导出',
@@ -380,12 +340,7 @@ export const SettingsScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* 头部 */}
-      <Animated.View
-        style={[
-          styles.header,
-          { opacity: headerOpacity },
-        ]}
-      >
+      <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>设置</Text>
           <Text style={styles.headerSubtitle}>自定义您的睡眠追踪体验</Text>
@@ -393,7 +348,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.headerIcon}>
           <User size={24} color={colors.primary[500]} />
         </View>
-      </Animated.View>
+      </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -413,7 +368,6 @@ export const SettingsScreen: React.FC = () => {
               subtitle={`入睡 ${settings.sleepGoal.targetBedTime} · 起床 ${settings.sleepGoal.targetWakeTime}`}
               value={`${Math.round(settings.sleepGoal.durationGoal / 60)}小时`}
               onPress={() => setShowGoalModal(true)}
-              delay={0}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -428,7 +382,6 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.smartRemindersEnabled ? colors.primary[500] : '#FFFFFF'}
                 />
               }
-              delay={50}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -443,7 +396,6 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.sleepAnalysisEnabled ? colors.success.main : '#FFFFFF'}
                 />
               }
-              delay={100}
             />
           </View>
         </View>
@@ -470,7 +422,6 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.themeMode === 'dark' ? '#FFFFFF' : '#FFFFFF'}
                 />
               }
-              delay={150}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -485,7 +436,6 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.use24HourFormat ? colors.info.main : '#FFFFFF'}
                 />
               }
-              delay={200}
             />
           </View>
         </View>
@@ -499,7 +449,6 @@ export const SettingsScreen: React.FC = () => {
               title="导出数据"
               subtitle="导出为 CSV 格式"
               onPress={handleExportCSV}
-              delay={250}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -508,7 +457,6 @@ export const SettingsScreen: React.FC = () => {
               subtitle="删除所有睡眠数据"
               danger
               onPress={handleClearData}
-              delay={300}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -517,7 +465,6 @@ export const SettingsScreen: React.FC = () => {
               subtitle="重置所有数据和设置"
               danger
               onPress={handleResetDatabase}
-              delay={350}
             />
           </View>
         </View>
@@ -530,7 +477,6 @@ export const SettingsScreen: React.FC = () => {
               icon={<Info size={20} color={colors.gray[500]} />}
               title="版本"
               value="1.0.0"
-              delay={400}
             />
           </View>
         </View>

@@ -82,11 +82,11 @@ const CircularProgress: React.FC<CircularProgressProps> = ({
   const strokeDashoffset = circumference * (1 - progress);
 
   useEffect(() => {
-    // 动画
+    // 动画 - 使用原生驱动
     Animated.timing(animatedValue, {
       toValue: 1,
       duration,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start();
 
     // 数字动画

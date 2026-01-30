@@ -14,7 +14,6 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
-  Animated,
   Alert,
 } from 'react-native';
 import {
@@ -26,16 +25,15 @@ import {
   BedDouble,
   Sun,
   Moon,
-  Star,
-  Tag,
   FileText,
   Save,
   X,
   Clock,
   ChevronDown,
+  Check,
 } from 'lucide-react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { format, parse, isValid, subDays } from 'date-fns';
+import { useNavigation } from '@react-navigation/native';
+import { format, isValid, subDays } from 'date-fns';
 
 // 组件
 import { QualityRating, GradientButton } from '../components';
@@ -67,7 +65,7 @@ const SLEEP_TAGS: { key: SleepTag; label: string; icon: string }[] = [
   { key: 'travel', label: '旅行', icon: '✈️' },
 ];
 
-// ==================== 时间选择器组件 ====================
+// ==================== 时间选择器组件（修复闪退）====================
 
 interface TimePickerFieldProps {
   label: string;
@@ -85,15 +83,16 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
   mode = 'bedtime',
 }) => {
   const [showPicker, setShowPicker] = useState(false);
-  const [tempDate, setTempDate] = useState(value);
 
+  // 修复：单独处理日期选择，避免状态冲突
   const handleChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    // Android 自动关闭，iOS 需要手动关闭
     if (Platform.OS === 'android') {
       setShowPicker(false);
     }
     
-    if (selectedDate && isValid(selectedDate)) {
-      setTempDate(selectedDate);
+    // 确保有有效日期且不是取消操作
+    if (event.type === 'set' && selectedDate && isValid(selectedDate)) {
       onChange(selectedDate);
     }
   };
@@ -111,6 +110,7 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
           mode === 'bedtime' ? styles.bedtimeButton : styles.waketimeButton,
         ]}
         onPress={() => setShowPicker(true)}
+        activeOpacity={0.8}
       >
         <View style={styles.timeFieldIcon}>{icon}</View>
         <View style={styles.timeFieldContent}>
@@ -120,17 +120,64 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
         <ChevronDown size={20} color={colors.gray[400]} />
       </TouchableOpacity>
 
+      {/* 直接渲染选择器，不使用 Modal 嵌套 */}
       {showPicker && (
         <DateTimePicker
-          value={tempDate}
+          value={value}
           mode="datetime"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={handleChange}
           maximumDate={new Date()}
-          minimumDate={subDays(new Date(), 1)}
+          minimumDate={subDays(new Date(), 7)}
+          locale="zh-CN"
         />
       )}
+      
+      {/* iOS 需要额外的关闭按钮 */}
+      {showPicker && Platform.OS === 'ios' && (
+        <View style={styles.iosButtonContainer}>
+          <TouchableOpacity 
+            style={styles.iosDoneButton}
+            onPress={() => setShowPicker(false)}
+          >
+            <Text style={styles.iosDoneButtonText}>完成</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
+  );
+};
+
+// ==================== 单个标签项组件 ====================
+
+interface TagItemProps {
+  tag: typeof SLEEP_TAGS[0];
+  index: number;
+  isSelected: boolean;
+  onToggle: () => void;
+}
+
+const TagItem: React.FC<TagItemProps> = ({ tag, isSelected, onToggle }) => {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.tagButton,
+        isSelected && styles.tagButtonSelected,
+      ]}
+      onPress={onToggle}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.tagIcon}>{tag.icon}</Text>
+      <Text
+        style={[
+          styles.tagText,
+          isSelected && styles.tagTextSelected,
+        ]}
+      >
+        {tag.label}
+      </Text>
+      {isSelected && <Check size={14} color="#FFFFFF" style={styles.tagCheck} />}
+    </TouchableOpacity>
   );
 };
 
@@ -146,45 +193,15 @@ const TagSelector: React.FC<TagSelectorProps> = ({ selectedTags, onToggleTag }) 
     <View style={styles.tagContainer}>
       <Text style={styles.tagLabel}>影响因素</Text>
       <View style={styles.tagGrid}>
-        {SLEEP_TAGS.map((tag, index) => {
-          const isSelected = selectedTags.includes(tag.key);
-          const fadeAnim = useState(new Animated.Value(0))[0];
-          
-          useEffect(() => {
-            Animated.timing(fadeAnim, {
-              toValue: 1,
-              delay: index * 50,
-              duration: 300,
-              useNativeDriver: true,
-            }).start();
-          }, []);
-
-          return (
-            <Animated.View
-              key={tag.key}
-              style={{ opacity: fadeAnim, transform: [{ scale: fadeAnim }] }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.tagButton,
-                  isSelected && styles.tagButtonSelected,
-                ]}
-                onPress={() => onToggleTag(tag.key)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.tagIcon}>{tag.icon}</Text>
-                <Text
-                  style={[
-                    styles.tagText,
-                    isSelected && styles.tagTextSelected,
-                  ]}
-                >
-                  {tag.label}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          );
-        })}
+        {SLEEP_TAGS.map((tag, index) => (
+          <TagItem
+            key={tag.key}
+            tag={tag}
+            index={index}
+            isSelected={selectedTags.includes(tag.key)}
+            onToggle={() => onToggleTag(tag.key)}
+          />
+        ))}
       </View>
     </View>
   );
@@ -251,27 +268,6 @@ export const AddRecordScreen: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<SleepTag[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [wakeUpCount, setWakeUpCount] = useState<number>(0);
-  
-  // 动画值
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [slideAnim] = useState(new Animated.Value(30));
-
-  useEffect(() => {
-    // 入场动画
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
   // 切换标签
   const toggleTag = useCallback((tag: SleepTag) => {
@@ -387,101 +383,91 @@ export const AddRecordScreen: React.FC = () => {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            style={[
-              styles.formContainer,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            {/* 时间选择 */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>时间设置</Text>
-              <View style={styles.timeFields}>
-                <TimePickerField
-                  label="入睡时间"
-                  icon={<Moon size={20} color={colors.primary[500]} />}
-                  value={bedTime}
-                  onChange={setBedTime}
-                  mode="bedtime"
-                />
-                <TimePickerField
-                  label="起床时间"
-                  icon={<Sun size={20} color={colors.warning.main} />}
-                  value={wakeTime}
-                  onChange={setWakeTime}
-                  mode="waketime"
-                />
-              </View>
-            </View>
-
-            {/* 统计预览 */}
-            <StatsPreview
-              bedTime={bedTime}
-              wakeTime={wakeTime}
-              qualityScore={qualityScore}
-            />
-
-            {/* 质量评分 */}
-            <View style={styles.section}>
-              <QualityRating
-                value={qualityScore}
-                onValueChange={setQualityScore}
-                size="large"
-                showLabel={true}
+          {/* 时间选择 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>时间设置</Text>
+            <View style={styles.timeFields}>
+              <TimePickerField
+                label="入睡时间"
+                icon={<Moon size={20} color={colors.primary[500]} />}
+                value={bedTime}
+                onChange={setBedTime}
+                mode="bedtime"
+              />
+              <TimePickerField
+                label="起床时间"
+                icon={<Sun size={20} color={colors.warning.main} />}
+                value={wakeTime}
+                onChange={setWakeTime}
+                mode="waketime"
               />
             </View>
+          </View>
 
-            {/* 醒来次数 */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>夜间醒来</Text>
-              <View style={styles.wakeUpContainer}>
-                <TouchableOpacity
-                  style={styles.wakeUpButton}
-                  onPress={decrementWakeUp}
-                >
-                  <Text style={styles.wakeUpButtonText}>−</Text>
-                </TouchableOpacity>
-                <View style={styles.wakeUpDisplay}>
-                  <Clock size={20} color={colors.primary[500]} />
-                  <Text style={styles.wakeUpCount}>{wakeUpCount}</Text>
-                  <Text style={styles.wakeUpLabel}>次</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.wakeUpButton}
-                  onPress={incrementWakeUp}
-                >
-                  <Text style={styles.wakeUpButtonText}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+          {/* 统计预览 */}
+          <StatsPreview
+            bedTime={bedTime}
+            wakeTime={wakeTime}
+            qualityScore={qualityScore}
+          />
 
-            {/* 标签选择 */}
-            <TagSelector
-              selectedTags={selectedTags}
-              onToggleTag={toggleTag}
+          {/* 质量评分 */}
+          <View style={styles.section}>
+            <QualityRating
+              value={qualityScore}
+              onValueChange={setQualityScore}
+              size="large"
+              showLabel={true}
             />
+          </View>
 
-            {/* 备注输入 */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>备注</Text>
-              <View style={styles.notesContainer}>
-                <FileText size={20} color={colors.gray[400]} style={styles.notesIcon} />
-                <TextInput
-                  style={styles.notesInput}
-                  multiline
-                  numberOfLines={4}
-                  placeholder="记录今天的睡眠感受..."
-                  placeholderTextColor={colors.gray[400]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  textAlignVertical="top"
-                />
+          {/* 醒来次数 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>夜间醒来</Text>
+            <View style={styles.wakeUpContainer}>
+              <TouchableOpacity
+                style={styles.wakeUpButton}
+                onPress={decrementWakeUp}
+              >
+                <Text style={styles.wakeUpButtonText}>−</Text>
+              </TouchableOpacity>
+              <View style={styles.wakeUpDisplay}>
+                <Clock size={20} color={colors.primary[500]} />
+                <Text style={styles.wakeUpCount}>{wakeUpCount}</Text>
+                <Text style={styles.wakeUpLabel}>次</Text>
               </View>
+              <TouchableOpacity
+                style={styles.wakeUpButton}
+                onPress={incrementWakeUp}
+              >
+                <Text style={styles.wakeUpButtonText}>+</Text>
+              </TouchableOpacity>
             </View>
-          </Animated.View>
+          </View>
+
+          {/* 标签选择 */}
+          <TagSelector
+            selectedTags={selectedTags}
+            onToggleTag={toggleTag}
+          />
+
+          {/* 备注输入 */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>备注</Text>
+            <View style={styles.notesContainer}>
+              <FileText size={20} color={colors.gray[400]} style={styles.notesIcon} />
+              <TextInput
+                style={styles.notesInput}
+                multiline
+                numberOfLines={4}
+                placeholder="记录今天的睡眠感受..."
+                placeholderTextColor={colors.gray[400]}
+                value={notes}
+                onChangeText={setNotes}
+                textAlignVertical="top"
+              />
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -534,8 +520,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: spacing.lg,
-  },
-  formContainer: {
     paddingHorizontal: spacing.lg,
   },
   section: {
@@ -588,6 +572,21 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.gray[500],
     marginTop: spacing.xs,
+  },
+  iosButtonContainer: {
+    marginTop: spacing.sm,
+    alignItems: 'flex-end',
+  },
+  iosDoneButton: {
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  iosDoneButtonText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
   },
   previewContainer: {
     marginBottom: spacing.xl,
@@ -714,6 +713,9 @@ const styles = StyleSheet.create({
   tagTextSelected: {
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  tagCheck: {
+    marginLeft: spacing.xs,
   },
   notesContainer: {
     flexDirection: 'row',

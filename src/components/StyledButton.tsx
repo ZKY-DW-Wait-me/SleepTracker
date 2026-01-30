@@ -63,38 +63,24 @@ export const StyledButton: React.FC<StyledButtonProps> = ({
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
 
-  // 按下动画
+  // 按下动画 - 全部使用原生驱动
   const handlePressIn = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.95,
-        friction: 5,
-        tension: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(glowAnim, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: false,
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      friction: 5,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
   }, []);
 
-  // 松开动画
+  // 松开动画 - 全部使用原生驱动
   const handlePressOut = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 5,
-        tension: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(glowAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }),
-    ]).start();
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 5,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
   }, []);
 
   // 计算尺寸
@@ -177,22 +163,14 @@ export const StyledButton: React.FC<StyledButtonProps> = ({
     },
   }[variant];
 
-  // 发光动画样式
+  // 发光动画样式 - 使用 transform 避免原生驱动冲突
   const glowStyle = {
-    shadowColor: variantStyles.glowColor,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: glowAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: variant === 'gradient' ? [0.4, 0.8] : [0, 0.6],
-    }),
-    shadowRadius: glowAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: variant === 'gradient' ? [12, 20] : [0, 15],
-    }),
-    elevation: glowAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [variant === 'gradient' ? 8 : 2, 12],
-    }),
+    transform: [{
+      scale: glowAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 1.02],
+      }),
+    }],
   };
 
   // 是否禁用

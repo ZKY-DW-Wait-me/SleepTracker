@@ -53,6 +53,8 @@ const MainTabNavigator = () => {
         tabBarInactiveTintColor: colors.gray[400],
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
+        // 禁用 Tab 切换动画，避免与屏幕内动画冲突
+        animationEnabled: false,
       }}
     >
       <Tab.Screen
