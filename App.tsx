@@ -2,6 +2,8 @@
  * SleepTracker - 应用入口组件
  * 商业级睡眠管理专家 App
  * 
+ * 修复：添加 ErrorBoundary，修复动画配置
+ * 
  * @format
  */
 
@@ -16,6 +18,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Provider as ReduxProvider } from 'react-redux';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -29,6 +32,9 @@ import { AppNavigator } from './src/navigation';
 
 // 服务
 import { initializeDatabase, checkDatabaseHealth } from './src/services/database';
+
+// 组件
+import { ErrorBoundary } from './src/components';
 
 // 样式
 import { colors, fontSize, spacing } from './src/styles';
@@ -47,26 +53,30 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const [initError, setInitError] = useState<string | null>(null);
   const [dbStatus, setDbStatus] = useState<string>('正在初始化...');
   
-  // 动画值
+  // 动画值 - 所有动画都使用原生驱动
   const fadeAnim = useState(new Animated.Value(0))[0];
   const scaleAnim = useState(new Animated.Value(0.8))[0];
   const progressAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
-    // 入场动画
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    try {
+      // 入场动画
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } catch (error) {
+      console.error('[ERROR] Animation start failed:', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -77,7 +87,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
         Animated.timing(progressAnim, {
           toValue: 0.3,
           duration: 500,
-          useNativeDriver: false,
+          useNativeDriver: true, // 修复：改为 true
         }).start();
         
         const dbResult = await initializeDatabase();
@@ -91,13 +101,13 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
         Animated.timing(progressAnim, {
           toValue: 0.6,
           duration: 500,
-          useNativeDriver: false,
+          useNativeDriver: true, // 修复：改为 true
         }).start();
         
         const healthResult = await checkDatabaseHealth();
         
         if (healthResult.success && healthResult.data) {
-          console.log('数据库健康状态:', healthResult.data);
+          console.log('[DEBUG] Database health:', healthResult.data);
           setDbStatus(`数据库就绪 (${healthResult.data.recordCount} 条记录)`);
         }
 
@@ -106,16 +116,16 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
         Animated.timing(progressAnim, {
           toValue: 1,
           duration: 400,
-          useNativeDriver: false,
+          useNativeDriver: true, // 修复：改为 true
         }).start();
         
         // 模拟短暂的完成状态显示
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise<void>(resolve => setTimeout(resolve, 500));
 
         // 初始化完成
         setIsInitializing(false);
       } catch (error) {
-        console.error('应用初始化失败:', error);
+        console.error('[ERROR] App initialization failed:', error);
         setInitError(error instanceof Error ? error.message : '未知错误');
         setIsInitializing(false);
       }
@@ -154,10 +164,9 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
               style={[
                 styles.progressBar,
                 {
-                  width: progressAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', '100%'],
-                  }),
+                  transform: [{
+                    scaleX: progressAnim,
+                  }],
                 },
               ]}
             />
@@ -167,7 +176,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
         </Animated.View>
         
         {/* 版本信息 */}
-        <Text style={styles.versionText}>v1.0.0</Text>
+        <Text style={styles.versionText}>v1.0.1</Text>
       </View>
     );
   }
@@ -197,7 +206,7 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 /**
  * 主应用组件
- * 配置 Redux Provider、SafeAreaProvider、GestureHandler
+ * 配置 ErrorBoundary、Redux Provider、SafeAreaProvider、GestureHandler
  */
 const App: React.FC = () => {
   const isDarkMode = useColorScheme() === 'dark';
@@ -208,21 +217,23 @@ const App: React.FC = () => {
   };
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <ReduxProvider store={store}>
-          <AppInitializer>
-            <SafeAreaView style={backgroundStyle}>
-              <StatusBar
-                barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-                backgroundColor={backgroundStyle.backgroundColor}
-              />
-              <AppNavigator />
-            </SafeAreaView>
-          </AppInitializer>
-        </ReduxProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <ReduxProvider store={store}>
+            <AppInitializer>
+              <SafeAreaView style={backgroundStyle}>
+                <StatusBar
+                  barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+                  backgroundColor={backgroundStyle.backgroundColor}
+                />
+                <AppNavigator />
+              </SafeAreaView>
+            </AppInitializer>
+          </ReduxProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 };
 
@@ -286,6 +297,7 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#6366F1', // 靛紫色
     borderRadius: 2,
+    width: '100%', // 用于 scaleX 动画
   },
   statusText: {
     fontSize: fontSize.sm,

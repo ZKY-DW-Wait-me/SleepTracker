@@ -27,3 +27,6 @@ export {
   SleepQualityChart, 
   SleepHeatmap,
 } from './ChartWrapper';
+
+// 错误边界组件
+export { ErrorBoundary } from './ErrorBoundary';

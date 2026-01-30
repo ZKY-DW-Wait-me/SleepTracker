@@ -2,6 +2,8 @@
  * SleepTracker - AddRecordScreen
  * 添加/编辑睡眠记录页面
  * 时间选择器、质量评分、标签选择
+ * 
+ * 修复：添加完整错误处理和调试日志，防止原生模块崩溃
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -65,7 +67,7 @@ const SLEEP_TAGS: { key: SleepTag; label: string; icon: string }[] = [
   { key: 'travel', label: '旅行', icon: '✈️' },
 ];
 
-// ==================== 时间选择器组件（修复闪退）====================
+// ==================== 时间选择器组件（修复闪退 - 添加完整错误处理）====================
 
 interface TimePickerFieldProps {
   label: string;
@@ -83,19 +85,86 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
   mode = 'bedtime',
 }) => {
   const [showPicker, setShowPicker] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
-  // 修复：单独处理日期选择，避免状态冲突
-  const handleChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    // Android 自动关闭，iOS 需要手动关闭
-    if (Platform.OS === 'android') {
+  // 修复：添加完整错误处理和调试日志
+  const handleChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
+    try {
+      console.log('[DEBUG] TimePicker handleChange called:', {
+        type: event.type,
+        platform: Platform.OS,
+        hasDate: !!selectedDate,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Android 自动关闭，iOS 需要手动关闭
+      if (Platform.OS === 'android') {
+        setShowPicker(false);
+      }
+      
+      // 处理用户取消的情况 (event.type === 'dismissed')
+      if (event.type === 'dismissed') {
+        console.log('[DEBUG] User dismissed the picker');
+        if (Platform.OS === 'ios') {
+          setShowPicker(false);
+        }
+        return;
+      }
+      
+      // 确保有有效日期且不是取消操作
+      if (event.type === 'set' && selectedDate) {
+        // 验证日期是否有效
+        if (!isValid(selectedDate)) {
+          console.error('[ERROR] Invalid date selected:', selectedDate);
+          Alert.alert('错误', '选择的日期无效');
+          return;
+        }
+        
+        console.log('[DEBUG] Valid date selected:', selectedDate.toISOString());
+        
+        // 使用 try-catch 包装 onChange 调用
+        try {
+          onChange(selectedDate);
+        } catch (callbackError) {
+          console.error('[ERROR] onChange callback failed:', callbackError);
+          Alert.alert('错误', '更新日期失败');
+        }
+        
+        // iOS 需要手动关闭
+        if (Platform.OS === 'ios') {
+          setShowPicker(false);
+        }
+      }
+    } catch (error) {
+      console.error('[ERROR] TimePicker handleChange error:', error);
+      setHasError(true);
+      setShowPicker(false);
+      Alert.alert('错误', '时间选择器发生错误，请重试');
+    }
+  }, [onChange]);
+
+  // 处理打开选择器
+  const handlePress = useCallback(() => {
+    try {
+      console.log('[DEBUG] Opening time picker');
+      setShowPicker(true);
+      setHasError(false);
+    } catch (error) {
+      console.error('[ERROR] Failed to open picker:', error);
+      Alert.alert('错误', '无法打开时间选择器');
+    }
+  }, []);
+
+  // 处理 iOS 完成按钮
+  const handleDone = useCallback(() => {
+    try {
+      console.log('[DEBUG] iOS Done button pressed');
+      setShowPicker(false);
+    } catch (error) {
+      console.error('[ERROR] Failed to close picker:', error);
       setShowPicker(false);
     }
-    
-    // 确保有有效日期且不是取消操作
-    if (event.type === 'set' && selectedDate && isValid(selectedDate)) {
-      onChange(selectedDate);
-    }
-  };
+  }, []);
 
   const displayValue = format(value, 'HH:mm');
   const dateValue = format(value, 'MM月dd日');
@@ -108,8 +177,9 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
         style={[
           styles.timeFieldButton,
           mode === 'bedtime' ? styles.bedtimeButton : styles.waketimeButton,
+          hasError && { borderColor: colors.error.main },
         ]}
-        onPress={() => setShowPicker(true)}
+        onPress={handlePress}
         activeOpacity={0.8}
       >
         <View style={styles.timeFieldIcon}>{icon}</View>
@@ -120,29 +190,34 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
         <ChevronDown size={20} color={colors.gray[400]} />
       </TouchableOpacity>
 
-      {/* 直接渲染选择器，不使用 Modal 嵌套 */}
+      {/* 直接渲染选择器，不使用 Modal 嵌套 - 修复闪退 */}
       {showPicker && (
-        <DateTimePicker
-          value={value}
-          mode="datetime"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleChange}
-          maximumDate={new Date()}
-          minimumDate={subDays(new Date(), 7)}
-          locale="zh-CN"
-        />
+        <View style={styles.pickerContainer}>
+          <DateTimePicker
+            value={value}
+            mode="datetime"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleChange}
+            maximumDate={new Date()}
+            minimumDate={subDays(new Date(), 7)}
+            locale="zh-CN"
+            testID={`${mode}-picker`}
+          />
+          
+          {/* iOS 需要额外的完成按钮 */}
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity 
+              style={styles.iosDoneButton}
+              onPress={handleDone}
+            >
+              <Text style={styles.iosDoneButtonText}>完成</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
       
-      {/* iOS 需要额外的关闭按钮 */}
-      {showPicker && Platform.OS === 'ios' && (
-        <View style={styles.iosButtonContainer}>
-          <TouchableOpacity 
-            style={styles.iosDoneButton}
-            onPress={() => setShowPicker(false)}
-          >
-            <Text style={styles.iosDoneButtonText}>完成</Text>
-          </TouchableOpacity>
-        </View>
+      {hasError && (
+        <Text style={styles.errorText}>时间选择器出错，请重试</Text>
       )}
     </View>
   );
@@ -158,13 +233,21 @@ interface TagItemProps {
 }
 
 const TagItem: React.FC<TagItemProps> = ({ tag, isSelected, onToggle }) => {
+  const handlePress = useCallback(() => {
+    try {
+      onToggle();
+    } catch (error) {
+      console.error('[ERROR] Tag toggle failed:', error);
+    }
+  }, [onToggle]);
+
   return (
     <TouchableOpacity
       style={[
         styles.tagButton,
         isSelected && styles.tagButtonSelected,
       ]}
-      onPress={onToggle}
+      onPress={handlePress}
       activeOpacity={0.7}
     >
       <Text style={styles.tagIcon}>{tag.icon}</Text>
@@ -189,6 +272,16 @@ interface TagSelectorProps {
 }
 
 const TagSelector: React.FC<TagSelectorProps> = ({ selectedTags, onToggleTag }) => {
+  const handleToggle = useCallback((tagKey: SleepTag) => {
+    try {
+      console.log('[DEBUG] Toggling tag:', tagKey);
+      onToggleTag(tagKey);
+    } catch (error) {
+      console.error('[ERROR] Failed to toggle tag:', error);
+      Alert.alert('错误', '切换标签失败');
+    }
+  }, [onToggleTag]);
+
   return (
     <View style={styles.tagContainer}>
       <Text style={styles.tagLabel}>影响因素</Text>
@@ -199,7 +292,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({ selectedTags, onToggleTag }) 
             tag={tag}
             index={index}
             isSelected={selectedTags.includes(tag.key)}
-            onToggle={() => onToggleTag(tag.key)}
+            onToggle={() => handleToggle(tag.key)}
           />
         ))}
       </View>
@@ -220,9 +313,17 @@ const StatsPreview: React.FC<StatsPreviewProps> = ({
   wakeTime,
   qualityScore,
 }) => {
-  const duration = calculateDurationMinutes(bedTime, wakeTime);
-  const hours = Math.floor(duration / 60);
-  const minutes = duration % 60;
+  let duration = 0;
+  let hours = 0;
+  let minutes = 0;
+  
+  try {
+    duration = calculateDurationMinutes(bedTime, wakeTime);
+    hours = Math.floor(duration / 60);
+    minutes = duration % 60;
+  } catch (error) {
+    console.error('[ERROR] Failed to calculate duration:', error);
+  }
 
   return (
     <View style={styles.previewContainer}>
@@ -269,55 +370,99 @@ export const AddRecordScreen: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [wakeUpCount, setWakeUpCount] = useState<number>(0);
 
-  // 切换标签
+  // 切换标签 - 添加错误处理
   const toggleTag = useCallback((tag: SleepTag) => {
-    setSelectedTags(prev =>
-      prev.includes(tag)
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
-    );
-  }, []);
-
-  // 增加醒来次数
-  const incrementWakeUp = useCallback(() => {
-    setWakeUpCount(prev => prev + 1);
-  }, []);
-
-  // 减少醒来次数
-  const decrementWakeUp = useCallback(() => {
-    setWakeUpCount(prev => Math.max(0, prev - 1));
-  }, []);
-
-  // 保存记录
-  const handleSave = useCallback(async () => {
-    // 验证
-    if (wakeTime <= bedTime) {
-      Alert.alert('时间错误', '起床时间必须晚于入睡时间');
-      return;
-    }
-
-    const duration = calculateDurationMinutes(bedTime, wakeTime);
-    if (duration < 60) {
-      Alert.alert('时间过短', '睡眠时长至少需要1小时');
-      return;
-    }
-
-    if (duration > 720) {
-      Alert.alert('时间过长', '单次睡眠时长不应超过12小时');
-      return;
-    }
-
     try {
-      const success = await addRecord({
+      setSelectedTags(prev =>
+        prev.includes(tag)
+          ? prev.filter(t => t !== tag)
+          : [...prev, tag]
+      );
+    } catch (error) {
+      console.error('[ERROR] toggleTag failed:', error);
+    }
+  }, []);
+
+  // 增加醒来次数 - 添加错误处理
+  const incrementWakeUp = useCallback(() => {
+    try {
+      setWakeUpCount(prev => prev + 1);
+    } catch (error) {
+      console.error('[ERROR] incrementWakeUp failed:', error);
+    }
+  }, []);
+
+  // 减少醒来次数 - 添加错误处理
+  const decrementWakeUp = useCallback(() => {
+    try {
+      setWakeUpCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('[ERROR] decrementWakeUp failed:', error);
+    }
+  }, []);
+
+  // 处理床时间变化
+  const handleBedTimeChange = useCallback((date: Date) => {
+    try {
+      console.log('[DEBUG] Bed time changed:', date.toISOString());
+      setBedTime(date);
+    } catch (error) {
+      console.error('[ERROR] Failed to set bed time:', error);
+      Alert.alert('错误', '设置入睡时间失败');
+    }
+  }, []);
+
+  // 处理起床时间变化
+  const handleWakeTimeChange = useCallback((date: Date) => {
+    try {
+      console.log('[DEBUG] Wake time changed:', date.toISOString());
+      setWakeTime(date);
+    } catch (error) {
+      console.error('[ERROR] Failed to set wake time:', error);
+      Alert.alert('错误', '设置起床时间失败');
+    }
+  }, []);
+
+  // 保存记录 - 添加完整错误处理
+  const handleSave = useCallback(async () => {
+    try {
+      console.log('[DEBUG] handleSave called');
+      
+      // 验证
+      if (wakeTime <= bedTime) {
+        Alert.alert('时间错误', '起床时间必须晚于入睡时间');
+        return;
+      }
+
+      const duration = calculateDurationMinutes(bedTime, wakeTime);
+      if (duration < 60) {
+        Alert.alert('时间过短', '睡眠时长至少需要1小时');
+        return;
+      }
+
+      if (duration > 720) {
+        Alert.alert('时间过长', '单次睡眠时长不应超过12小时');
+        return;
+      }
+
+      console.log('[DEBUG] Validation passed, saving record...');
+      
+      // 准备记录数据
+      const recordData = {
         bedTime: bedTime.toISOString(),
         wakeTime: wakeTime.toISOString(),
         qualityScore,
         wakeUpCount,
         notes,
         tags: selectedTags,
-      });
+      };
+      
+      console.log('[DEBUG] Record data:', JSON.stringify(recordData, null, 2));
+
+      const success = await addRecord(recordData);
 
       if (success) {
+        console.log('[DEBUG] Record saved successfully');
         Alert.alert(
           '保存成功',
           '睡眠记录已保存',
@@ -325,38 +470,62 @@ export const AddRecordScreen: React.FC = () => {
             {
               text: '确定',
               onPress: () => {
-                // @ts-ignore
-                navigation.navigate('MainTabs', { screen: 'Home' });
+                try {
+                  // @ts-ignore
+                  navigation.navigate('MainTabs', { screen: 'Home' });
+                } catch (navError) {
+                  console.error('[ERROR] Navigation failed:', navError);
+                  navigation.goBack();
+                }
               },
             },
           ]
         );
       } else {
+        console.error('[ERROR] addRecord returned false');
         Alert.alert('保存失败', '请重试');
       }
     } catch (error) {
-      console.error('Save error:', error);
-      Alert.alert('保存失败', '发生未知错误');
+      console.error('[ERROR] Save error:', error);
+      Alert.alert('保存失败', error instanceof Error ? error.message : '发生未知错误');
     }
   }, [bedTime, wakeTime, qualityScore, selectedTags, notes, wakeUpCount, addRecord, navigation]);
 
-  // 取消
+  // 取消 - 添加错误处理
   const handleCancel = useCallback(() => {
-    if (notes || selectedTags.length > 0) {
-      Alert.alert(
-        '确认退出',
-        '未保存的内容将丢失，是否继续？',
-        [
-          { text: '取消', style: 'cancel' },
-          {
-            text: '退出',
-            style: 'destructive',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
-    } else {
-      navigation.goBack();
+    try {
+      console.log('[DEBUG] handleCancel called');
+      
+      if (notes || selectedTags.length > 0) {
+        Alert.alert(
+          '确认退出',
+          '未保存的内容将丢失，是否继续？',
+          [
+            { text: '取消', style: 'cancel' },
+            {
+              text: '退出',
+              style: 'destructive',
+              onPress: () => {
+                try {
+                  navigation.goBack();
+                } catch (error) {
+                  console.error('[ERROR] Navigation failed:', error);
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        navigation.goBack();
+      }
+    } catch (error) {
+      console.error('[ERROR] Cancel error:', error);
+      // 如果出错，直接返回
+      try {
+        navigation.goBack();
+      } catch {
+        // 忽略导航错误
+      }
     }
   }, [notes, selectedTags, navigation]);
 
@@ -391,14 +560,14 @@ export const AddRecordScreen: React.FC = () => {
                 label="入睡时间"
                 icon={<Moon size={20} color={colors.primary[500]} />}
                 value={bedTime}
-                onChange={setBedTime}
+                onChange={handleBedTimeChange}
                 mode="bedtime"
               />
               <TimePickerField
                 label="起床时间"
                 icon={<Sun size={20} color={colors.warning.main} />}
                 value={wakeTime}
-                onChange={setWakeTime}
+                onChange={handleWakeTimeChange}
                 mode="waketime"
               />
             </View>
@@ -573,20 +742,30 @@ const styles = StyleSheet.create({
     color: colors.gray[500],
     marginTop: spacing.xs,
   },
-  iosButtonContainer: {
+  pickerContainer: {
     marginTop: spacing.sm,
-    alignItems: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    padding: spacing.sm,
+    ...shadows.sm,
   },
   iosDoneButton: {
     backgroundColor: colors.primary[500],
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
+    alignSelf: 'flex-end',
+    marginTop: spacing.sm,
   },
   iosDoneButtonText: {
     color: '#FFFFFF',
     fontSize: fontSize.md,
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: fontSize.sm,
+    color: colors.error.main,
+    marginTop: spacing.xs,
   },
   previewContainer: {
     marginBottom: spacing.xl,

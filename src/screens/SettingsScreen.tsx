@@ -1,6 +1,8 @@
 /**
  * SleepTracker - SettingsScreen
  * 设置页面：目标设定、深色模式、数据导出
+ * 
+ * 修复：添加完整错误处理，修复 ActivityIndicator 缺失导入
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -15,6 +17,7 @@ import {
   TextInput,
   Modal,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import {
   SafeAreaView,
@@ -73,10 +76,23 @@ const SettingItem: React.FC<SettingItemProps> = ({
   rightElement,
   danger = false,
 }) => {
+  // 包装点击事件以捕获错误
+  const handlePress = useCallback(() => {
+    try {
+      if (onPress) {
+        console.log('[DEBUG] SettingItem pressed:', title);
+        onPress();
+      }
+    } catch (error) {
+      console.error('[ERROR] SettingItem onPress failed:', error);
+      Alert.alert('错误', '操作失败，请重试');
+    }
+  }, [onPress, title]);
+
   return (
     <TouchableOpacity
       style={[styles.settingItem, onPress && styles.settingItemPressable]}
-      onPress={onPress}
+      onPress={handlePress}
       activeOpacity={onPress ? 0.7 : 1}
       disabled={!onPress}
     >
@@ -130,27 +146,43 @@ const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
   const [targetWakeTime, setTargetWakeTime] = useState(currentGoal.targetWakeTime);
   const [durationGoal, setDurationGoal] = useState(String(currentGoal.durationGoal));
 
-  const handleSave = () => {
-    const duration = parseInt(durationGoal, 10);
-    if (isNaN(duration) || duration < 300 || duration > 720) {
-      Alert.alert('无效时长', '睡眠目标时长应在5-12小时之间');
-      return;
-    }
+  const handleSave = useCallback(() => {
+    try {
+      console.log('[DEBUG] GoalSettingModal handleSave called');
+      
+      const duration = parseInt(durationGoal, 10);
+      if (isNaN(duration) || duration < 300 || duration > 720) {
+        Alert.alert('无效时长', '睡眠目标时长应在5-12小时之间');
+        return;
+      }
 
-    onSave({
-      targetBedTime,
-      targetWakeTime,
-      durationGoal: duration,
-    });
-    onClose();
-  };
+      onSave({
+        targetBedTime,
+        targetWakeTime,
+        durationGoal: duration,
+      });
+      onClose();
+    } catch (error) {
+      console.error('[ERROR] GoalSettingModal save failed:', error);
+      Alert.alert('错误', '保存设置失败');
+    }
+  }, [durationGoal, targetBedTime, targetWakeTime, onSave, onClose]);
+
+  const handleClose = useCallback(() => {
+    try {
+      console.log('[DEBUG] GoalSettingModal closing');
+      onClose();
+    } catch (error) {
+      console.error('[ERROR] GoalSettingModal close failed:', error);
+    }
+  }, [onClose]);
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
@@ -192,7 +224,7 @@ const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={[styles.modalButton, styles.modalButtonCancel]}
-              onPress={onClose}
+              onPress={handleClose}
             >
               <Text style={styles.modalButtonTextCancel}>取消</Text>
             </TouchableOpacity>
@@ -234,108 +266,198 @@ export const SettingsScreen: React.FC = () => {
 
   // 初始化
   useEffect(() => {
-    if (!isInitialized) {
-      loadSettings();
+    try {
+      if (!isInitialized) {
+        console.log('[DEBUG] Loading settings...');
+        loadSettings().catch(error => {
+          console.error('[ERROR] Failed to load settings:', error);
+        });
+      }
+    } catch (error) {
+      console.error('[ERROR] Settings useEffect error:', error);
     }
-  }, []);
+  }, [isInitialized, loadSettings]);
 
-  // 切换主题
+  // 切换主题 - 添加错误处理
   const handleThemeToggle = useCallback(async () => {
-    const newTheme = settings.themeMode === 'dark' ? 'light' : 'dark';
-    await setTheme(newTheme);
+    try {
+      console.log('[DEBUG] Toggling theme');
+      const newTheme = settings.themeMode === 'dark' ? 'light' : 'dark';
+      await setTheme(newTheme);
+      console.log('[DEBUG] Theme toggled to:', newTheme);
+    } catch (error) {
+      console.error('[ERROR] Theme toggle failed:', error);
+      Alert.alert('错误', '切换主题失败');
+    }
   }, [settings.themeMode, setTheme]);
 
-  // 导出数据为 CSV
+  // 导出数据为 CSV - 添加完整错误处理
   const handleExportCSV = useCallback(async () => {
+    console.log('[DEBUG] Export CSV clicked');
     setIsExporting(true);
+    
     try {
       const result = await exportAllData();
+      console.log('[DEBUG] Export result:', result);
+      
       if (result.success && result.data) {
-        const data = JSON.parse(result.data);
-        const records = data.records || [];
-        
-        const headers = ['日期', '入睡时间', '起床时间', '时长(分钟)', '质量评分', '质量等级', '醒来次数', '备注'];
-        const rows = records.map((r: any) => [
-          new Date(r.bedTime).toLocaleDateString('zh-CN'),
-          new Date(r.bedTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-          new Date(r.wakeTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-          r.duration,
-          r.qualityScore,
-          r.quality,
-          r.wakeUpCount,
-          r.notes || '',
-        ]);
-        
-        const csvContent = [
-          headers.join(','),
-          ...rows.map((row: any[]) => row.map(cell => `"${cell}"`).join(',')),
-        ].join('\n');
+        try {
+          const data = JSON.parse(result.data);
+          const records = data.records || [];
+          
+          const headers = ['日期', '入睡时间', '起床时间', '时长(分钟)', '质量评分', '质量等级', '醒来次数', '备注'];
+          const rows = records.map((r: any) => [
+            new Date(r.bedTime).toLocaleDateString('zh-CN'),
+            new Date(r.bedTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            new Date(r.wakeTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            r.duration,
+            r.qualityScore,
+            r.quality,
+            r.wakeUpCount,
+            r.notes || '',
+          ]);
+          
+          const csvContent = [
+            headers.join(','),
+            ...rows.map((row: any[]) => row.map(cell => `"${cell}"`).join(',')),
+          ].join('\n');
 
-        await Share.share({
-          message: csvContent,
-          title: 'SleepTracker 数据导出',
-        });
+          await Share.share({
+            message: csvContent,
+            title: 'SleepTracker 数据导出',
+          });
+          console.log('[DEBUG] Share dialog opened');
+        } catch (parseError) {
+          console.error('[ERROR] CSV parse error:', parseError);
+          Alert.alert('导出失败', '数据解析失败');
+        }
       } else {
         Alert.alert('导出失败', result.error || '无法导出数据');
       }
     } catch (error) {
-      console.error('Export error:', error);
-      Alert.alert('导出失败', '发生未知错误');
+      console.error('[ERROR] Export error:', error);
+      Alert.alert('导出失败', error instanceof Error ? error.message : '发生未知错误');
     } finally {
       setIsExporting(false);
     }
   }, []);
 
-  // 清空数据
+  // 清空数据 - 添加完整错误处理
   const handleClearData = useCallback(() => {
-    Alert.alert(
-      '清空数据',
-      '此操作将删除所有睡眠记录，不可恢复。是否继续？',
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '清空',
-          style: 'destructive',
-          onPress: async () => {
-            const result = await clearAllData();
-            if (result.success) {
-              Alert.alert('已清空', '所有睡眠记录已删除');
-            } else {
-              Alert.alert('操作失败', result.error || '请重试');
-            }
+    try {
+      console.log('[DEBUG] Clear data clicked');
+      
+      Alert.alert(
+        '清空数据',
+        '此操作将删除所有睡眠记录，不可恢复。是否继续？',
+        [
+          { 
+            text: '取消', 
+            style: 'cancel',
+            onPress: () => console.log('[DEBUG] Clear cancelled'),
           },
-        },
-      ]
-    );
+          {
+            text: '清空',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log('[DEBUG] Confirming clear data...');
+                const result = await clearAllData();
+                console.log('[DEBUG] Clear result:', result);
+                
+                if (result.success) {
+                  Alert.alert('已清空', '所有睡眠记录已删除');
+                } else {
+                  Alert.alert('操作失败', result.error || '请重试');
+                }
+              } catch (error) {
+                console.error('[ERROR] Clear failed:', error);
+                Alert.alert('操作失败', error instanceof Error ? error.message : '请重试');
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('[ERROR] handleClearData failed:', error);
+      Alert.alert('错误', '操作失败');
+    }
   }, []);
 
-  // 重置数据库
+  // 重置数据库 - 添加完整错误处理
   const handleResetDatabase = useCallback(() => {
-    Alert.alert(
-      '重置数据库',
-      '此操作将重置整个数据库，包括用户设置。是否继续？',
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '重置',
-          style: 'destructive',
-          onPress: async () => {
-            const result = await resetDatabase();
-            if (result.success) {
-              Alert.alert('已重置', '数据库已重置为初始状态');
-            } else {
-              Alert.alert('操作失败', result.error || '请重试');
-            }
+    try {
+      console.log('[DEBUG] Reset database clicked');
+      
+      Alert.alert(
+        '重置数据库',
+        '此操作将重置整个数据库，包括用户设置。是否继续？',
+        [
+          { 
+            text: '取消', 
+            style: 'cancel',
+            onPress: () => console.log('[DEBUG] Reset cancelled'),
           },
-        },
-      ]
-    );
+          {
+            text: '重置',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log('[DEBUG] Confirming reset database...');
+                const result = await resetDatabase();
+                console.log('[DEBUG] Reset result:', result);
+                
+                if (result.success) {
+                  Alert.alert('已重置', '数据库已重置为初始状态');
+                } else {
+                  Alert.alert('操作失败', result.error || '请重试');
+                }
+              } catch (error) {
+                console.error('[ERROR] Reset failed:', error);
+                Alert.alert('操作失败', error instanceof Error ? error.message : '请重试');
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('[ERROR] handleResetDatabase failed:', error);
+      Alert.alert('错误', '操作失败');
+    }
   }, []);
 
-  // 保存目标
+  // 保存目标 - 添加错误处理
   const handleSaveGoal = useCallback(async (goal: Partial<SleepGoal>) => {
-    await setSleepGoal(goal);
+    try {
+      console.log('[DEBUG] Saving goal:', goal);
+      await setSleepGoal(goal);
+      console.log('[DEBUG] Goal saved successfully');
+    } catch (error) {
+      console.error('[ERROR] Save goal failed:', error);
+      Alert.alert('错误', '保存目标失败');
+    }
   }, [setSleepGoal]);
+
+  // 打开目标设置模态框
+  const handleOpenGoalModal = useCallback(() => {
+    try {
+      console.log('[DEBUG] Opening goal modal');
+      setShowGoalModal(true);
+    } catch (error) {
+      console.error('[ERROR] Failed to open modal:', error);
+    }
+  }, []);
+
+  // 关闭目标设置模态框
+  const handleCloseGoalModal = useCallback(() => {
+    try {
+      console.log('[DEBUG] Closing goal modal');
+      setShowGoalModal(false);
+    } catch (error) {
+      console.error('[ERROR] Failed to close modal:', error);
+      setShowGoalModal(false);
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -367,7 +489,7 @@ export const SettingsScreen: React.FC = () => {
               title="目标时间"
               subtitle={`入睡 ${settings.sleepGoal.targetBedTime} · 起床 ${settings.sleepGoal.targetWakeTime}`}
               value={`${Math.round(settings.sleepGoal.durationGoal / 60)}小时`}
-              onPress={() => setShowGoalModal(true)}
+              onPress={handleOpenGoalModal}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -377,7 +499,7 @@ export const SettingsScreen: React.FC = () => {
               rightElement={
                 <Switch
                   value={settings.smartRemindersEnabled}
-                  onValueChange={toggleSmart}
+                  onValueChange={async () => { await toggleSmart(); }}
                   trackColor={{ false: colors.gray[300], true: colors.primary[300] }}
                   thumbColor={settings.smartRemindersEnabled ? colors.primary[500] : '#FFFFFF'}
                 />
@@ -391,7 +513,7 @@ export const SettingsScreen: React.FC = () => {
               rightElement={
                 <Switch
                   value={settings.sleepAnalysisEnabled}
-                  onValueChange={toggleAnalysis}
+                  onValueChange={async () => { await toggleAnalysis(); }}
                   trackColor={{ false: colors.gray[300], true: colors.success.light }}
                   thumbColor={settings.sleepAnalysisEnabled ? colors.success.main : '#FFFFFF'}
                 />
@@ -431,7 +553,7 @@ export const SettingsScreen: React.FC = () => {
               rightElement={
                 <Switch
                   value={settings.use24HourFormat}
-                  onValueChange={toggleFormat}
+                  onValueChange={async () => { await toggleFormat(); }}
                   trackColor={{ false: colors.gray[300], true: colors.info.light }}
                   thumbColor={settings.use24HourFormat ? colors.info.main : '#FFFFFF'}
                 />
@@ -447,8 +569,8 @@ export const SettingsScreen: React.FC = () => {
             <SettingItem
               icon={<Download size={20} color={colors.success.main} />}
               title="导出数据"
-              subtitle="导出为 CSV 格式"
-              onPress={handleExportCSV}
+              subtitle={isExporting ? '导出中...' : '导出为 CSV 格式'}
+              onPress={isExporting ? undefined : handleExportCSV}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -476,14 +598,14 @@ export const SettingsScreen: React.FC = () => {
             <SettingItem
               icon={<Info size={20} color={colors.gray[500]} />}
               title="版本"
-              value="1.0.0"
+              value="1.0.1"
             />
           </View>
         </View>
 
         {/* 版权信息 */}
         <Text style={styles.copyright}>
-          SleepTracker v1.0.0{'\n'}
+          SleepTracker v1.0.1{'\n'}
           您的专业睡眠健康管家
         </Text>
       </ScrollView>
@@ -491,7 +613,7 @@ export const SettingsScreen: React.FC = () => {
       {/* 目标设置模态框 */}
       <GoalSettingModal
         visible={showGoalModal}
-        onClose={() => setShowGoalModal(false)}
+        onClose={handleCloseGoalModal}
         currentGoal={settings.sleepGoal}
         onSave={handleSaveGoal}
       />
