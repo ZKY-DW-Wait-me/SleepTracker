@@ -87,59 +87,23 @@ const TimePickerField: React.FC<TimePickerFieldProps> = ({
   const [showPicker, setShowPicker] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  // 修复：添加完整错误处理和调试日志
+  // 修复：简化日期选择逻辑，避免调用 dismiss()
   const handleChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
     try {
-      console.log('[DEBUG] TimePicker handleChange called:', {
-        type: event.type,
-        platform: Platform.OS,
-        hasDate: !!selectedDate,
-        timestamp: new Date().toISOString(),
-      });
+      console.log('[DEBUG] TimePicker event:', event.type, 'date:', selectedDate);
 
-      // Android 自动关闭，iOS 需要手动关闭
-      if (Platform.OS === 'android') {
-        setShowPicker(false);
-      }
+      // 无论何种情况都关闭选择器（Android 自动关闭，iOS 手动关闭）
+      setShowPicker(false);
       
-      // 处理用户取消的情况 (event.type === 'dismissed')
-      if (event.type === 'dismissed') {
-        console.log('[DEBUG] User dismissed the picker');
-        if (Platform.OS === 'ios') {
-          setShowPicker(false);
-        }
-        return;
-      }
-      
-      // 确保有有效日期且不是取消操作
-      if (event.type === 'set' && selectedDate) {
-        // 验证日期是否有效
-        if (!isValid(selectedDate)) {
-          console.error('[ERROR] Invalid date selected:', selectedDate);
-          Alert.alert('错误', '选择的日期无效');
-          return;
-        }
-        
-        console.log('[DEBUG] Valid date selected:', selectedDate.toISOString());
-        
-        // 使用 try-catch 包装 onChange 调用
-        try {
-          onChange(selectedDate);
-        } catch (callbackError) {
-          console.error('[ERROR] onChange callback failed:', callbackError);
-          Alert.alert('错误', '更新日期失败');
-        }
-        
-        // iOS 需要手动关闭
-        if (Platform.OS === 'ios') {
-          setShowPicker(false);
-        }
+      // 用户点击确定且选择了有效日期
+      if (event.type === 'set' && selectedDate && isValid(selectedDate)) {
+        console.log('[DEBUG] Date selected:', selectedDate.toISOString());
+        onChange(selectedDate);
       }
     } catch (error) {
-      console.error('[ERROR] TimePicker handleChange error:', error);
+      console.error('[ERROR] TimePicker error:', error);
       setHasError(true);
       setShowPicker(false);
-      Alert.alert('错误', '时间选择器发生错误，请重试');
     }
   }, [onChange]);
 

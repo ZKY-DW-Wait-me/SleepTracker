@@ -17,7 +17,6 @@ import {
   TextInput,
   Modal,
   Share,
-  ActivityIndicator,
 } from 'react-native';
 import {
   SafeAreaView,
@@ -40,6 +39,7 @@ import {
   Languages,
   Thermometer,
   Clock,
+  BarChart3,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 
@@ -50,7 +50,7 @@ import { useSettings } from '../hooks';
 import { exportAllData, clearAllData, resetDatabase } from '../services/database';
 
 // 样式
-import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
+import { colors, spacing, fontSize, borderRadius, shadows, lightTheme, darkTheme } from '../styles';
 
 // 类型
 import { SleepGoal } from '../types';
@@ -65,6 +65,8 @@ interface SettingItemProps {
   onPress?: () => void;
   rightElement?: React.ReactNode;
   danger?: boolean;
+  isDarkMode?: boolean;
+  theme?: any;
 }
 
 const SettingItem: React.FC<SettingItemProps> = ({
@@ -75,6 +77,8 @@ const SettingItem: React.FC<SettingItemProps> = ({
   onPress,
   rightElement,
   danger = false,
+  isDarkMode: itemDarkMode = false,
+  theme: itemTheme,
 }) => {
   // 包装点击事件以捕获错误
   const handlePress = useCallback(() => {
@@ -99,7 +103,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
       <View
         style={[
           styles.settingIcon,
-          { backgroundColor: danger ? colors.error.light + '20' : colors.primary[50] },
+          { backgroundColor: danger ? colors.error.light + '20' : (itemDarkMode ? colors.primary[900] : colors.primary[50]) },
         ]}
       >
         {icon}
@@ -108,19 +112,19 @@ const SettingItem: React.FC<SettingItemProps> = ({
         <Text
           style={[
             styles.settingTitle,
-            danger && styles.settingTitleDanger,
+            { color: danger ? colors.error.main : itemTheme?.text || colors.gray[800] },
           ]}
         >
           {title}
         </Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        {subtitle && <Text style={[styles.settingSubtitle, { color: itemTheme?.textSecondary || colors.gray[500] }]}>{subtitle}</Text>}
       </View>
-      {value && <Text style={styles.settingValue}>{value}</Text>}
+      {value && <Text style={[styles.settingValue, { color: itemTheme?.textSecondary || colors.gray[600] }]}>{value}</Text>}
       {rightElement}
       {onPress && !rightElement && (
         <ChevronRight
           size={20}
-          color={danger ? colors.error.main : colors.gray[400]}
+          color={danger ? colors.error.main : itemTheme?.textSecondary || colors.gray[400]}
         />
       )}
     </TouchableOpacity>
@@ -134,6 +138,8 @@ interface GoalSettingModalProps {
   onClose: () => void;
   currentGoal: SleepGoal;
   onSave: (goal: Partial<SleepGoal>) => void;
+  isDarkMode?: boolean;
+  theme?: any;
 }
 
 const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
@@ -141,6 +147,8 @@ const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
   onClose,
   currentGoal,
   onSave,
+  isDarkMode: modalDarkMode = false,
+  theme: modalTheme,
 }) => {
   const [targetBedTime, setTargetBedTime] = useState(currentGoal.targetBedTime);
   const [targetWakeTime, setTargetWakeTime] = useState(currentGoal.targetWakeTime);
@@ -185,48 +193,51 @@ const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
       onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>设置睡眠目标</Text>
+        <View style={[styles.modalContent, { backgroundColor: modalTheme?.card || '#FFFFFF' }]}>
+          <Text style={[styles.modalTitle, { color: modalTheme?.text || colors.gray[800] }]}>设置睡眠目标</Text>
 
           <View style={styles.modalField}>
-            <Text style={styles.modalLabel}>目标入睡时间</Text>
+            <Text style={[styles.modalLabel, { color: modalTheme?.textSecondary || colors.gray[600] }]}>目标入睡时间</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, { backgroundColor: modalDarkMode ? colors.gray[700] : '#FFFFFF', color: modalTheme?.text || colors.gray[800], borderColor: modalTheme?.border || colors.gray[300] }]}
               value={targetBedTime}
               onChangeText={setTargetBedTime}
               placeholder="22:30"
+              placeholderTextColor={modalTheme?.textSecondary || colors.gray[400]}
               keyboardType="numbers-and-punctuation"
             />
           </View>
 
           <View style={styles.modalField}>
-            <Text style={styles.modalLabel}>目标起床时间</Text>
+            <Text style={[styles.modalLabel, { color: modalTheme?.textSecondary || colors.gray[600] }]}>目标起床时间</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, { backgroundColor: modalDarkMode ? colors.gray[700] : '#FFFFFF', color: modalTheme?.text || colors.gray[800], borderColor: modalTheme?.border || colors.gray[300] }]}
               value={targetWakeTime}
               onChangeText={setTargetWakeTime}
               placeholder="06:30"
+              placeholderTextColor={modalTheme?.textSecondary || colors.gray[400]}
               keyboardType="numbers-and-punctuation"
             />
           </View>
 
           <View style={styles.modalField}>
-            <Text style={styles.modalLabel}>目标睡眠时长（分钟）</Text>
+            <Text style={[styles.modalLabel, { color: modalTheme?.textSecondary || colors.gray[600] }]}>目标睡眠时长（分钟）</Text>
             <TextInput
-              style={styles.modalInput}
+              style={[styles.modalInput, { backgroundColor: modalDarkMode ? colors.gray[700] : '#FFFFFF', color: modalTheme?.text || colors.gray[800], borderColor: modalTheme?.border || colors.gray[300] }]}
               value={durationGoal}
               onChangeText={setDurationGoal}
               placeholder="480"
+              placeholderTextColor={modalTheme?.textSecondary || colors.gray[400]}
               keyboardType="number-pad"
             />
           </View>
 
           <View style={styles.modalButtons}>
             <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonCancel]}
+              style={[styles.modalButton, { backgroundColor: modalDarkMode ? colors.gray[700] : colors.gray[100] }]}
               onPress={handleClose}
             >
-              <Text style={styles.modalButtonTextCancel}>取消</Text>
+              <Text style={[styles.modalButtonTextCancel, { color: modalTheme?.text || colors.gray[800] }]}>取消</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, styles.modalButtonConfirm]}
@@ -263,6 +274,10 @@ export const SettingsScreen: React.FC = () => {
     toggleFormat,
     toggleTempUnit,
   } = useSettings();
+
+  // 计算当前主题
+  const isDarkMode = settings.themeMode === 'dark';
+  const theme = isDarkMode ? darkTheme : lightTheme;
 
   // 初始化
   useEffect(() => {
@@ -460,12 +475,12 @@ export const SettingsScreen: React.FC = () => {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top']}>
       {/* 头部 */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <View>
-          <Text style={styles.headerTitle}>设置</Text>
-          <Text style={styles.headerSubtitle}>自定义您的睡眠追踪体验</Text>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>设置</Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>自定义您的睡眠追踪体验</Text>
         </View>
         <View style={styles.headerIcon}>
           <User size={24} color={colors.primary[500]} />
@@ -482,14 +497,16 @@ export const SettingsScreen: React.FC = () => {
       >
         {/* 睡眠目标设置 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>睡眠目标</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>睡眠目标</Text>
+          <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <SettingItem
               icon={<Target size={20} color={colors.primary[500]} />}
               title="目标时间"
               subtitle={`入睡 ${settings.sleepGoal.targetBedTime} · 起床 ${settings.sleepGoal.targetWakeTime}`}
               value={`${Math.round(settings.sleepGoal.durationGoal / 60)}小时`}
               onPress={handleOpenGoalModal}
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -504,10 +521,12 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.smartRemindersEnabled ? colors.primary[500] : '#FFFFFF'}
                 />
               }
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingItem
-              icon={<ActivityIndicator size="small" color={colors.success.main} /> as any}
+              icon={<BarChart3 size={20} color={colors.success.main} />}
               title="睡眠分析"
               subtitle="启用智能睡眠分析"
               rightElement={
@@ -518,32 +537,36 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.sleepAnalysisEnabled ? colors.success.main : '#FFFFFF'}
                 />
               }
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
           </View>
         </View>
 
         {/* 外观设置 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>外观</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>外观</Text>
+          <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <SettingItem
               icon={
-                settings.themeMode === 'dark' ? (
-                  <Moon size={20} color={colors.gray[700]} />
+                isDarkMode ? (
+                  <Moon size={20} color={colors.gray[300]} />
                 ) : (
                   <Sun size={20} color={colors.warning.main} />
                 )
               }
               title="深色模式"
-              subtitle={settings.themeMode === 'dark' ? '已开启' : '已关闭'}
+              subtitle={isDarkMode ? '已开启' : '已关闭'}
               rightElement={
                 <Switch
-                  value={settings.themeMode === 'dark'}
+                  value={isDarkMode}
                   onValueChange={handleThemeToggle}
                   trackColor={{ false: colors.gray[300], true: colors.gray[700] }}
-                  thumbColor={settings.themeMode === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+                  thumbColor={isDarkMode ? '#FFFFFF' : '#FFFFFF'}
                 />
               }
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -558,19 +581,23 @@ export const SettingsScreen: React.FC = () => {
                   thumbColor={settings.use24HourFormat ? colors.info.main : '#FFFFFF'}
                 />
               }
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
           </View>
         </View>
 
         {/* 数据管理 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>数据管理</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>数据管理</Text>
+          <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <SettingItem
               icon={<Download size={20} color={colors.success.main} />}
               title="导出数据"
               subtitle={isExporting ? '导出中...' : '导出为 CSV 格式'}
               onPress={isExporting ? undefined : handleExportCSV}
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -579,6 +606,8 @@ export const SettingsScreen: React.FC = () => {
               subtitle="删除所有睡眠数据"
               danger
               onPress={handleClearData}
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
             <View style={styles.divider} />
             <SettingItem
@@ -587,24 +616,28 @@ export const SettingsScreen: React.FC = () => {
               subtitle="重置所有数据和设置"
               danger
               onPress={handleResetDatabase}
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
           </View>
         </View>
 
         {/* 关于 */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>关于</Text>
-          <View style={styles.sectionContent}>
+          <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>关于</Text>
+          <View style={[styles.sectionContent, { backgroundColor: theme.card }]}>
             <SettingItem
-              icon={<Info size={20} color={colors.gray[500]} />}
+              icon={<Info size={20} color={isDarkMode ? colors.gray[400] : colors.gray[500]} />}
               title="版本"
               value="1.0.1"
+              isDarkMode={isDarkMode}
+              theme={theme}
             />
           </View>
         </View>
 
         {/* 版权信息 */}
-        <Text style={styles.copyright}>
+        <Text style={[styles.copyright, { color: theme.textSecondary }]}>
           SleepTracker v1.0.1{'\n'}
           您的专业睡眠健康管家
         </Text>
@@ -616,6 +649,8 @@ export const SettingsScreen: React.FC = () => {
         onClose={handleCloseGoalModal}
         currentGoal={settings.sleepGoal}
         onSave={handleSaveGoal}
+        isDarkMode={isDarkMode}
+        theme={theme}
       />
     </SafeAreaView>
   );
@@ -780,14 +815,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
-  },
-  modalButtonCancel: {
-    backgroundColor: colors.gray[100],
-    marginRight: spacing.sm,
+    marginHorizontal: spacing.xs,
   },
   modalButtonConfirm: {
     backgroundColor: colors.primary[500],
-    marginLeft: spacing.sm,
   },
   modalButtonTextCancel: {
     fontSize: fontSize.md,
