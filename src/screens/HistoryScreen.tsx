@@ -1,12 +1,11 @@
 /**
  * SleepTracker - HistoryScreen
  * 历史记录页面：展示所有睡眠记录列表
- * 支持：下拉刷新、筛选、长按删除单条记录
  * 
- * 修复：使用 useFocusEffect 强制刷新，修复删除后 UI 不更新问题
+ * 全量重构：彻底修复数据读取逻辑
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,7 +13,6 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
-  Animated,
   Alert,
   Dimensions,
 } from 'react-native';
@@ -34,9 +32,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // 组件
 import { SleepCard } from '../components';
 
-// Hooks
-import { useSleepRecords } from '../hooks';
-
 // 样式
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 
@@ -45,7 +40,7 @@ import { SleepRecord } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// AsyncStorage key
+// AsyncStorage key - 必须与保存时使用的 key 一致
 const STORAGE_KEY = 'sleepRecords';
 
 // ==================== 月份分组头部 ====================
@@ -130,63 +125,57 @@ export const HistoryScreen: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   
-  // 状态
+  // 核心状态：记录列表
+  const [records, setRecords] = useState<SleepRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'week' | 'month'>('all');
-  const [headerOpacity] = useState(new Animated.Value(1));
-  const [localRecords, setLocalRecords] = useState<SleepRecord[]>([]);
   const [showDeleteToast, setShowDeleteToast] = useState(false);
 
-  // Hooks
-  const {
-    loadRecords,
-    removeRecord,
-  } = useSleepRecords();
-
-  // 从 AsyncStorage 直接读取数据（强制刷新）
-  const loadDataFromStorage = useCallback(async () => {
+  // ========== 核心数据读取逻辑（重写）==========
+  const loadData = useCallback(async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // 按时间倒序排列
-        const sorted = parsed.sort((a: SleepRecord, b: SleepRecord) => 
-          new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
-        );
-        setLocalRecords(sorted);
-      } else {
-        setLocalRecords([]);
-      }
-    } catch (error) {
-      console.error('[ERROR] Failed to load records:', error);
+      console.log('[DEBUG] HistoryScreen: Loading data from AsyncStorage...');
+      const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
+      console.log('[DEBUG] HistoryScreen: Raw data:', jsonValue?.substring(0, 100));
+      
+      const data = jsonValue != null ? JSON.parse(jsonValue) : [];
+      
+      // 按日期倒序排列（最新的在前面）
+      data.sort((a: SleepRecord, b: SleepRecord) => {
+        const timeA = new Date(a.bedTime || a.startTime || 0).getTime();
+        const timeB = new Date(b.bedTime || b.startTime || 0).getTime();
+        return timeB - timeA;
+      });
+      
+      console.log('[DEBUG] HistoryScreen: Loaded records count:', data.length);
+      setRecords(data);
+    } catch (e) {
+      console.error('[ERROR] HistoryScreen: Failed to load records:', e);
+      setRecords([]);
     }
   }, []);
 
-  // 使用 useFocusEffect 确保每次进入页面都强制刷新数据
+  // 使用 useFocusEffect 确保每次进入页面都刷新
   useFocusEffect(
     useCallback(() => {
-      console.log('[DEBUG] HistoryScreen focused, reloading data...');
-      loadDataFromStorage();
-      
-      // 头部动画
-      Animated.timing(headerOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      
-      return () => {
-        // 清理工作（如果需要）
-      };
-    }, [])
+      console.log('[DEBUG] HistoryScreen: Screen focused, reloading...');
+      loadData();
+    }, [loadData])
   );
 
-  // 过滤记录
-  const filteredRecords = useMemo(() => {
+  // 下拉刷新
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
+
+  // ========== 过滤记录 ==========
+  const filteredRecords = React.useMemo(() => {
     const now = new Date();
     
-    return localRecords.filter(record => {
-      const recordDate = parseISO(record.bedTime);
+    return records.filter((record: SleepRecord) => {
+      const recordDate = parseISO(record.bedTime || record.startTime);
       
       switch (selectedFilter) {
         case 'week':
@@ -197,94 +186,48 @@ export const HistoryScreen: React.FC = () => {
           return true;
       }
     });
-  }, [localRecords, selectedFilter]);
+  }, [records, selectedFilter]);
 
-  // 按月份分组
-  const groupedRecords = useMemo(() => {
-    const groups: { title: string; data: SleepRecord[] }[] = [];
-    
-    filteredRecords.forEach(record => {
-      const date = parseISO(record.bedTime);
-      const title = format(date, 'yyyy年M月');
-      
-      const existingGroup = groups.find(g => g.title === title);
-      if (existingGroup) {
-        existingGroup.data.push(record);
-      } else {
-        groups.push({ title, data: [record] });
-      }
-    });
-    
-    return groups;
-  }, [filteredRecords]);
-
-  // 下拉刷新
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadDataFromStorage();
-    setRefreshing(false);
-  }, [loadDataFromStorage]);
-
-  // 查看详情
+  // ========== 查看详情 ==========
   const handleViewRecord = useCallback((record: SleepRecord) => {
     // @ts-ignore
     navigation.navigate('SleepDetail', { recordId: record.id });
   }, [navigation]);
 
-  // 显示删除成功提示
-  const showDeleteSuccess = useCallback(() => {
-    setShowDeleteToast(true);
-    setTimeout(() => {
-      setShowDeleteToast(false);
-    }, 1500);
-  }, []);
-
-  // 长按删除单条记录（修复版）
-  const handleLongPress = useCallback((record: SleepRecord) => {
-    const recordDate = format(parseISO(record.bedTime), 'M月d日');
+  // ========== 删除记录 ==========
+  const handleDelete = useCallback((record: SleepRecord) => {
+    const recordDate = format(parseISO(record.bedTime || record.startTime), 'M月d日');
     
     Alert.alert(
       '删除记录？',
       `确定要删除 ${recordDate} 的睡眠记录吗？`,
       [
-        {
-          text: '取消',
-          style: 'cancel',
-        },
+        { text: '取消', style: 'cancel' },
         {
           text: '删除',
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('[DEBUG] Deleting record:', record.id);
-              
-              // 1. 从 AsyncStorage 读取记录
-              const stored = await AsyncStorage.getItem(STORAGE_KEY);
-              if (!stored) return;
-              
-              const allRecords: SleepRecord[] = JSON.parse(stored);
+              // 1. 读取当前数据
+              const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
+              const allRecords = jsonValue != null ? JSON.parse(jsonValue) : [];
               
               // 2. 过滤掉要删除的记录
-              const updatedRecords = allRecords.filter(r => r.id !== record.id);
+              const updatedRecords = allRecords.filter((r: SleepRecord) => r.id !== record.id);
               
-              // 3. 写回 AsyncStorage
+              // 3. 保存回 AsyncStorage
               await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedRecords));
-              console.log('[DEBUG] AsyncStorage updated');
               
-              // 4. 【关键】立即更新本地状态，强制触发列表重绘
-              setLocalRecords(updatedRecords.sort((a, b) => 
-                new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
-              ));
+              // 4. 立即更新本地状态（关键！）
+              setRecords(updatedRecords);
               
-              // 5. 同时调用 hook 的删除方法保持同步（不阻塞）
-              removeRecord(record.id).catch(() => {});
+              // 5. 显示成功提示
+              setShowDeleteToast(true);
+              setTimeout(() => setShowDeleteToast(false), 1500);
               
-              // 6. 显示删除成功提示
-              showDeleteSuccess();
-              
-              console.log('[DEBUG] Record deleted successfully:', record.id);
+              console.log('[DEBUG] HistoryScreen: Deleted record:', record.id);
             } catch (error) {
-              console.error('[ERROR] Failed to delete record:', error);
+              console.error('[ERROR] HistoryScreen: Failed to delete:', error);
               Alert.alert('删除失败', '请重试');
             }
           },
@@ -292,39 +235,42 @@ export const HistoryScreen: React.FC = () => {
       ],
       { cancelable: true }
     );
-  }, [removeRecord, showDeleteSuccess]);
+  }, []);
 
-  // 前往添加记录
+  // ========== 前往添加记录 ==========
   const handleAddRecord = useCallback(() => {
     // @ts-ignore
     navigation.navigate('MainTabs', { screen: 'Add' });
   }, [navigation]);
 
-  // 渲染列表项
+  // ========== 渲染列表项 ==========
   const renderItem = useCallback(({ item }: { item: SleepRecord }) => {
     return (
       <View style={styles.recordItem}>
         <TouchableOpacity
           style={styles.recordContent}
           onPress={() => handleViewRecord(item)}
-          onLongPress={() => handleLongPress(item)}
+          onLongPress={() => handleDelete(item)}
           delayLongPress={400}
           activeOpacity={0.8}
         >
           <SleepCard record={item} compact onPress={() => handleViewRecord(item)} />
         </TouchableOpacity>
         
-        {/* 删除按钮 */}
         <TouchableOpacity
           style={styles.deleteButton}
-          onPress={() => handleLongPress(item)}
+          onPress={() => handleDelete(item)}
           activeOpacity={0.6}
         >
           <Trash size={18} color={colors.error?.main || '#EF4444'} />
         </TouchableOpacity>
       </View>
     );
-  }, [handleViewRecord, handleLongPress]);
+  }, [handleViewRecord, handleDelete]);
+
+  // ========== 调试输出 ==========
+  console.log('[DEBUG] HistoryScreen: Rendering records count:', records.length);
+  console.log('[DEBUG] HistoryScreen: Filtered records count:', filteredRecords.length);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -332,20 +278,15 @@ export const HistoryScreen: React.FC = () => {
       <DeleteToast visible={showDeleteToast} />
 
       {/* 头部 */}
-      <Animated.View
-        style={[
-          styles.header,
-          { opacity: headerOpacity },
-        ]}
-      >
+      <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>历史记录</Text>
-          <Text style={styles.headerSubtitle}>共 {localRecords.length} 条记录</Text>
+          <Text style={styles.headerSubtitle}>共 {records.length} 条记录</Text>
         </View>
         <View style={styles.headerIcon}>
           <History size={24} color={colors.primary[500]} />
         </View>
-      </Animated.View>
+      </View>
 
       {/* 筛选栏 */}
       <View style={styles.filterBar}>
@@ -388,7 +329,6 @@ export const HistoryScreen: React.FC = () => {
           }
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          extraData={localRecords} // 确保列表在数据变化时重新渲染
         />
       ) : (
         <EmptyState onAddPress={handleAddRecord} />

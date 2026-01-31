@@ -304,7 +304,7 @@ const StatsPreview: React.FC<StatsPreviewProps> = ({
   return (
     <View style={styles.previewContainer}>
       <View style={styles.previewCard}>
-        <Text style={styles.previewTitle}>预计睡眠</Text>
+        <Text style={styles.previewTitle}>睡眠时长</Text>
         <Text style={styles.previewDuration}>
           {hours}<Text style={styles.previewUnit}>小时</Text>{' '}
           {minutes}<Text style={styles.previewUnit}>分钟</Text>

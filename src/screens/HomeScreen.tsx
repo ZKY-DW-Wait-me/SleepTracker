@@ -1,9 +1,11 @@
 /**
  * SleepTracker - HomeScreen
  * 首页：睡眠概览、进度圆环、快捷记录、趋势图
+ * 
+ * 全量重构：修复统计数据计算逻辑
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,17 +30,14 @@ import {
   AlarmClock,
 } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { format, subDays, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 组件
 import { SleepCard, GradientButton } from '../components';
 
-// Hooks
-import { useSleepRecords } from '../hooks';
-
 // 工具
 import { formatDuration, getWeekdayText } from '../utils/dateUtils';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 样式
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
@@ -54,16 +53,10 @@ const STORAGE_KEY = 'sleepRecords';
 // ==================== 环形进度组件 ====================
 
 interface CircularProgressProps {
-  /** 当前值（分钟） */
   value: number;
-  /** 目标值（分钟） */
   goal: number;
-  /** 尺寸 */
   size?: number;
-  /** 线条宽度 */
   strokeWidth?: number;
-  /** 动画持续时间 */
-  duration?: number;
 }
 
 const CircularProgress: React.FC<CircularProgressProps> = ({
@@ -71,90 +64,39 @@ const CircularProgress: React.FC<CircularProgressProps> = ({
   goal,
   size = 200,
   strokeWidth = 20,
-  duration = 1000,
 }) => {
-  const animatedValue = useState(new Animated.Value(0))[0];
-  const [displayValue, setDisplayValue] = useState(0);
-
-  // 计算进度（最大100%）
   const progress = Math.min(value / goal, 1);
-  const percentage = Math.round(progress * 100);
-
-  // 圆的参数
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const strokeDashoffset = circumference * (1 - progress);
-
-  useEffect(() => {
-    // 动画 - 使用原生驱动
-    Animated.timing(animatedValue, {
-      toValue: 1,
-      duration,
-      useNativeDriver: true,
-    }).start();
-
-    // 数字动画
-    let current = 0;
-    const increment = value / (duration / 16);
-    const timer = setInterval(() => {
-      current += increment;
-      if (current >= value) {
-        setDisplayValue(value);
-        clearInterval(timer);
-      } else {
-        setDisplayValue(Math.round(current));
-      }
-    }, 16);
-
-    return () => clearInterval(timer);
-  }, [value, goal]);
-
-  const hours = Math.floor(displayValue / 60);
-  const minutes = displayValue % 60;
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
 
   return (
     <View style={[styles.circularContainer, { width: size, height: size }]}>
       {/* 背景圆环 */}
-      <View style={styles.circularBackground}>
-        {/* SVG 模拟 */}
-        <View
-          style={[
-            styles.circularTrack,
-            {
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              borderWidth: strokeWidth,
-              borderColor: 'rgba(99, 102, 241, 0.15)',
-            },
-          ]}
-        />
-        
-        {/* 进度圆环 - 使用渐变效果 */}
-        <Animated.View
-          style={[
-            styles.circularProgress,
-            {
-              width: size,
-              height: size,
-              borderRadius: size / 2,
-              borderWidth: strokeWidth,
-              borderColor: colors.primary[500],
-              borderTopColor: colors.secondary[400],
-              borderRightColor: colors.secondary[500],
-              transform: [
-                { rotate: '-90deg' },
-                {
-                  rotate: animatedValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', `${progress * 360}deg`],
-                  }) as any,
-                },
-              ],
-            },
-          ]}
-        />
-      </View>
+      <View
+        style={[
+          styles.circularTrack,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: strokeWidth,
+          },
+        ]}
+      />
+      
+      {/* 进度圆环 */}
+      <View
+        style={[
+          styles.circularProgress,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: strokeWidth,
+            transform: [{ rotate: '-90deg' }],
+          },
+        ]}
+      />
 
       {/* 中心内容 */}
       <View style={styles.circularContent}>
@@ -177,7 +119,6 @@ interface StatItemProps {
   value: string;
   subValue?: string;
   color?: string;
-  delay?: number;
 }
 
 const StatItem: React.FC<StatItemProps> = ({
@@ -186,46 +127,16 @@ const StatItem: React.FC<StatItemProps> = ({
   value,
   subValue,
   color = colors.primary[500],
-  delay = 0,
 }) => {
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(20))[0];
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        delay,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
   return (
-    <Animated.View
-      style={[
-        styles.statItem,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
-    >
+    <View style={styles.statItem}>
       <View style={[styles.statIcon, { backgroundColor: `${color}15` }]}>
         {icon}
       </View>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={[styles.statValue, { color }]}>{value}</Text>
       {subValue && <Text style={styles.statSubValue}>{subValue}</Text>}
-    </Animated.View>
+    </View>
   );
 };
 
@@ -247,7 +158,7 @@ const MiniTrendChart: React.FC<MiniTrendChartProps> = ({ data, labels }) => {
       <View style={styles.miniChartContent}>
         {data.map((value, index) => {
           const height = ((value - minValue) / range) * 60 + 20;
-          const isGoalMet = value >= 420; // 7小时目标
+          const isGoalMet = value >= 420;
           
           return (
             <View key={index} style={styles.miniBarContainer}>
@@ -275,138 +186,130 @@ export const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   
-  // 状态
-  const [refreshing, setRefreshing] = useState(false);
-  const [headerOpacity] = useState(new Animated.Value(1));
-  
-  // 本地状态（替代 useSleepRecords 的数据）
+  // 核心状态
+  const [allRecords, setAllRecords] = useState<SleepRecord[]>([]);
   const [todayRecord, setTodayRecord] = useState<SleepRecord | null>(null);
-  const [records, setRecords] = useState<SleepRecord[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sleepGoal] = useState(480); // 8小时目标
 
-  // 从 AsyncStorage 直接读取今日数据
-  const loadTodayData = useCallback(async () => {
+  // ========== 核心数据读取与计算逻辑（重写）==========
+  const loadData = useCallback(async () => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const allRecords: SleepRecord[] = JSON.parse(stored);
-        
-        // 按时间倒序排列
-        const sorted = allRecords.sort((a, b) => 
-          new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
-        );
-        
-        setRecords(sorted);
-        
-        // 查找今日记录（bedTime 是今天的）
-        const today = new Date().toDateString();
-        const foundToday = sorted.find(r => 
-          new Date(r.bedTime).toDateString() === today
-        );
-        
-        setTodayRecord(foundToday || null);
-        console.log('[DEBUG] HomeScreen loaded, todayRecord:', foundToday ? 'found' : 'none');
-      } else {
-        setRecords([]);
-        setTodayRecord(null);
-      }
-    } catch (error) {
-      console.error('[ERROR] Failed to load today data:', error);
+      console.log('[DEBUG] HomeScreen: Loading data...');
+      const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
+      const records = jsonValue != null ? JSON.parse(jsonValue) : [];
+      
+      console.log('[DEBUG] HomeScreen: Total records loaded:', records.length);
+      
+      // 保存所有记录
+      setAllRecords(records);
+      
+      // 查找今日记录
+      const today = new Date().toDateString();
+      const foundToday = records.find((r: SleepRecord) => 
+        new Date(r.bedTime || r.startTime).toDateString() === today
+      );
+      setTodayRecord(foundToday || null);
+      
+      console.log('[DEBUG] HomeScreen: Today record:', foundToday ? 'found' : 'none');
+    } catch (e) {
+      console.error('[ERROR] HomeScreen: Failed to load data:', e);
+      setAllRecords([]);
+      setTodayRecord(null);
     }
   }, []);
 
-  // 使用 useFocusEffect 确保每次进入页面都强制刷新数据
+  // 使用 useFocusEffect 确保每次进入页面都刷新
   useFocusEffect(
     useCallback(() => {
-      console.log('[DEBUG] HomeScreen focused, reloading data...');
-      loadTodayData();
-      
-      // 头部动画
-      Animated.timing(headerOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      
-      return () => {
-        // 清理工作（如果需要）
-      };
-    }, [loadTodayData])
+      console.log('[DEBUG] HomeScreen: Screen focused, reloading...');
+      loadData();
+    }, [loadData])
   );
 
   // 下拉刷新
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadTodayData();
+    await loadData();
     setRefreshing(false);
-  }, [loadTodayData]);
+  }, [loadData]);
 
-  // 获取昨晚记录（非今天的第一条）
-  const lastNightRecord = useMemo(() => {
-    const today = new Date().toDateString();
-    return records.find(r => new Date(r.bedTime).toDateString() !== today);
-  }, [records]);
-
-  // 准备趋势图数据
-  const trendData = useMemo(() => {
-    const last7Days = records.slice(0, 7);
-    const data = last7Days.map(r => r.duration);
-    const labels = last7Days.map(r => format(parseISO(r.bedTime), 'MM/dd'));
-    
-    // 补足7天
-    while (data.length < 7) {
-      data.push(0);
-      labels.push('-');
-    }
-    
-    return { data: data.slice(0, 7).reverse(), labels: labels.slice(0, 7).reverse() };
-  }, [records]);
-
-  // 平均睡眠时长
+  // ========== 统计数据计算（基于所有历史记录）==========
+  
+  // 记录天数 = 所有记录的数量
+  const recordCount = allRecords.length;
+  
+  // 平均睡眠时长 = 所有记录时长总和 / 记录条数
   const avgDuration = useMemo(() => {
-    if (records.length === 0) return 0;
-    return Math.round(records.reduce((sum, r) => sum + r.duration, 0) / records.length);
-  }, [records]);
-
+    if (allRecords.length === 0) return 0;
+    const total = allRecords.reduce((sum, r) => sum + (r.duration || 0), 0);
+    return Math.round(total / allRecords.length);
+  }, [allRecords]);
+  
   // 连续达标天数
   const streakDays = useMemo(() => {
     let streak = 0;
-    for (const record of records) {
-      if (record.duration >= 420 && record.qualityScore >= 6) {
+    for (const record of allRecords) {
+      if ((record.duration || 0) >= 420 && (record.qualityScore || 0) >= 6) {
         streak++;
       } else {
         break;
       }
     }
     return streak;
-  }, [records]);
+  }, [allRecords]);
 
-  // 导航到添加记录
+  // 获取昨晚记录（非今天的第一条）
+  const lastNightRecord = useMemo(() => {
+    const today = new Date().toDateString();
+    return allRecords.find(r => 
+      new Date(r.bedTime || r.startTime).toDateString() !== today
+    );
+  }, [allRecords]);
+
+  // 准备趋势图数据
+  const trendData = useMemo(() => {
+    const last7Days = allRecords.slice(0, 7);
+    const data = last7Days.map(r => r.duration || 0);
+    const labels = last7Days.map(r => 
+      format(parseISO(r.bedTime || r.startTime), 'MM/dd')
+    );
+    
+    while (data.length < 7) {
+      data.push(0);
+      labels.push('-');
+    }
+    
+    return { 
+      data: data.slice(0, 7).reverse(), 
+      labels: labels.slice(0, 7).reverse() 
+    };
+  }, [allRecords]);
+
+  // ========== 导航处理 ==========
   const handleAddRecord = useCallback(() => {
     // @ts-ignore
     navigation.navigate('MainTabs', { screen: 'Add' });
   }, [navigation]);
 
-  // 查看记录详情
   const handleViewRecord = useCallback((record: SleepRecord) => {
     // @ts-ignore
     navigation.navigate('SleepDetail', { recordId: record.id });
   }, [navigation]);
 
-  // 查看统计
   const handleViewStats = useCallback(() => {
     // @ts-ignore
     navigation.navigate('MainTabs', { screen: 'Statistics' });
   }, [navigation]);
 
+  // ========== 调试输出 ==========
+  console.log('[DEBUG] HomeScreen: Rendering with recordCount:', recordCount);
+  console.log('[DEBUG] HomeScreen: avgDuration:', avgDuration);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* 头部 */}
-      <Animated.View
-        style={[
-          styles.header,
-          { opacity: headerOpacity },
-        ]}
-      >
+      <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>晚上好</Text>
           <Text style={styles.date}>
@@ -418,7 +321,7 @@ export const HomeScreen: React.FC = () => {
             <Text style={styles.profileText}>👤</Text>
           </View>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -438,8 +341,8 @@ export const HomeScreen: React.FC = () => {
           {todayRecord ? (
             <View style={styles.progressContainer}>
               <CircularProgress
-                value={todayRecord.duration}
-                goal={480} // 8小时目标
+                value={todayRecord.duration || 0}
+                goal={sleepGoal}
                 size={220}
                 strokeWidth={18}
               />
@@ -464,15 +367,14 @@ export const HomeScreen: React.FC = () => {
           />
         </View>
 
-        {/* 快捷统计 */}
+        {/* 快捷统计 - 基于所有历史记录 */}
         <View style={styles.statsSection}>
           <StatItem
             icon={<BedDouble size={20} color={colors.primary[500]} />}
             label="平均睡眠"
             value={formatDuration(avgDuration)}
-            subValue="近7天"
+            subValue="所有记录"
             color={colors.primary[500]}
-            delay={100}
           />
           <StatItem
             icon={<TrendingUp size={20} color={colors.success.main} />}
@@ -480,22 +382,20 @@ export const HomeScreen: React.FC = () => {
             value={`${streakDays}天`}
             subValue="目标达成"
             color={colors.success.main}
-            delay={200}
           />
           <StatItem
             icon={<Calendar size={20} color={colors.secondary[500]} />}
             label="记录天数"
-            value={`${records.length}天`}
+            value={`${recordCount}天`}
             subValue="累计记录"
             color={colors.secondary[500]}
-            delay={300}
           />
         </View>
 
         {/* 昨晚睡眠卡片 */}
         {lastNightRecord && (
           <View style={styles.cardSection}>
-            <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>昨晚睡眠</Text>
               <TouchableOpacity onPress={handleViewStats}>
                 <Text style={styles.seeAll}>查看全部</Text>
@@ -509,9 +409,9 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {/* 最近7天趋势 */}
-        {records.length > 1 && (
+        {allRecords.length > 1 && (
           <View style={styles.trendSection}>
-            <View style={styles.sectionHeader}>
+            <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>睡眠趋势</Text>
               <TouchableOpacity onPress={handleViewStats}>
                 <ChevronRight size={20} color={colors.gray[400]} />
@@ -610,16 +510,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  circularBackground: {
-    position: 'absolute',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   circularTrack: {
     position: 'absolute',
+    borderColor: 'rgba(99, 102, 241, 0.15)',
   },
   circularProgress: {
     position: 'absolute',
+    borderColor: colors.primary[500],
+    borderTopColor: colors.secondary[400],
+    borderRightColor: colors.secondary[500],
     borderStyle: 'solid',
   },
   circularContent: {
@@ -716,7 +615,7 @@ const styles = StyleSheet.create({
   cardSection: {
     marginBottom: spacing.xl,
   },
-  sectionHeader: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -770,7 +669,7 @@ const styles = StyleSheet.create({
   },
   tipCard: {
     flexDirection: 'row',
-    backgroundColor: colors.warning.light + '20',
+    backgroundColor: (colors.warning.light + '20') as string,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderLeftWidth: 4,
