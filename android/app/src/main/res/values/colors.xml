@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用主题色 - 蓝色 (#3B82F6) -->
+    <color name="colorPrimary">#3B82F6</color>
+    <color name="colorPrimaryDark">#3B82F6</color>
+    <color name="colorAccent">#3B82F6</color>
+    
+    <!-- React Native 日期选择器主题色 -->
+    <color name="datePickerHeaderBackground">#3B82F6</color>
+    <color name="datePickerHeaderText">#FFFFFF</color>
+    <color name="datePickerSelected">#3B82F6</color>
+    <color name="datePickerSelectedText">#FFFFFF</color>
+    
+    <!-- 系统组件主题色 -->
+    <color name="androidx_core_ripple_material_light">#1F3B82F6</color>
+    <color name="androidx_core_secondary_text_default_material_light">#3B82F6</color>
+</resources>

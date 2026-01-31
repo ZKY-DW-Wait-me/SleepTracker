@@ -1,6 +1,7 @@
 /**
  * SleepTracker - HistoryScreen
  * 历史记录页面：展示所有睡眠记录列表
+ * 支持：下拉刷新、筛选、长按删除单条记录
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -27,9 +28,11 @@ import {
   ChevronRight,
   Search,
   Archive,
+  Trash,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { format, parseISO, subDays, isSameDay } from 'date-fns';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 组件
 import { SleepCard } from '../components';
@@ -44,6 +47,9 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 import { SleepRecord } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// AsyncStorage key
+const STORAGE_KEY = 'sleepRecords';
 
 // ==================== 月份分组头部 ====================
 
@@ -116,8 +122,7 @@ export const HistoryScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'week' | 'month'>('all');
   const [headerOpacity] = useState(new Animated.Value(0));
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [localRecords, setLocalRecords] = useState<SleepRecord[]>([]);
 
   // Hooks
   const {
@@ -125,9 +130,13 @@ export const HistoryScreen: React.FC = () => {
     totalCount,
     loadRecords,
     removeRecord,
-    batchDeleteRecords,
     isLoading,
   } = useSleepRecords();
+
+  // 同步本地记录状态
+  useEffect(() => {
+    setLocalRecords(records);
+  }, [records]);
 
   // 初始化
   useEffect(() => {
@@ -144,7 +153,7 @@ export const HistoryScreen: React.FC = () => {
   const filteredRecords = useMemo(() => {
     const now = new Date();
     
-    return records.filter(record => {
+    return localRecords.filter(record => {
       const recordDate = parseISO(record.bedTime);
       
       switch (selectedFilter) {
@@ -156,7 +165,7 @@ export const HistoryScreen: React.FC = () => {
           return true;
       }
     });
-  }, [records, selectedFilter]);
+  }, [localRecords, selectedFilter]);
 
   // 按月份分组
   const groupedRecords = useMemo(() => {
@@ -182,78 +191,57 @@ export const HistoryScreen: React.FC = () => {
     setRefreshing(true);
     await loadRecords({ pagination: { page: 1, pageSize: 50 } });
     setRefreshing(false);
-  }, []);
-
-  // 加载更多
-  const onLoadMore = useCallback(() => {
-    // 实现分页加载逻辑
-  }, []);
+  }, [loadRecords]);
 
   // 查看详情
   const handleViewRecord = useCallback((record: SleepRecord) => {
-    if (isSelectionMode) {
-      toggleSelection(record.id);
-    } else {
-      // @ts-ignore
-      navigation.navigate('SleepDetail', { recordId: record.id });
-    }
-  }, [isSelectionMode, navigation]);
+    // @ts-ignore
+    navigation.navigate('SleepDetail', { recordId: record.id });
+  }, [navigation]);
 
-  // 长按进入选择模式
+  // 长按删除单条记录
   const handleLongPress = useCallback((record: SleepRecord) => {
-    if (!isSelectionMode) {
-      setIsSelectionMode(true);
-      setSelectedIds([record.id]);
-    }
-  }, [isSelectionMode]);
-
-  // 切换选择
-  const toggleSelection = useCallback((id: string) => {
-    setSelectedIds(prev =>
-      prev.includes(id)
-        ? prev.filter(i => i !== id)
-        : [...prev, id]
-    );
-  }, []);
-
-  // 退出选择模式
-  const exitSelectionMode = useCallback(() => {
-    setIsSelectionMode(false);
-    setSelectedIds([]);
-  }, []);
-
-  // 删除选中项
-  const handleDeleteSelected = useCallback(() => {
+    const recordDate = format(parseISO(record.bedTime), 'M月d日');
+    
     Alert.alert(
-      '确认删除',
-      `确定要删除选中的 ${selectedIds.length} 条记录吗？`,
+      '删除记录？',
+      `确定要删除 ${recordDate} 的睡眠记录吗？`,
       [
-        { text: '取消', style: 'cancel' },
+        {
+          text: '取消',
+          style: 'cancel',
+        },
         {
           text: '删除',
           style: 'destructive',
           onPress: async () => {
-            await batchDeleteRecords(selectedIds);
-            exitSelectionMode();
+            try {
+              // 1. 从 AsyncStorage 读取记录
+              const stored = await AsyncStorage.getItem(STORAGE_KEY);
+              if (!stored) return;
+              
+              const allRecords: SleepRecord[] = JSON.parse(stored);
+              
+              // 2. 过滤掉要删除的记录
+              const updatedRecords = allRecords.filter(r => r.id !== record.id);
+              
+              // 3. 写回 AsyncStorage
+              await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedRecords));
+              
+              // 4. 更新本地状态
+              setLocalRecords(prev => prev.filter(r => r.id !== record.id));
+              
+              // 5. 同时调用 hook 的删除方法保持同步
+              await removeRecord(record.id);
+              
+              console.log('[DEBUG] Deleted record:', record.id);
+            } catch (error) {
+              console.error('[ERROR] Failed to delete record:', error);
+            }
           },
         },
-      ]
-    );
-  }, [selectedIds, batchDeleteRecords, exitSelectionMode]);
-
-  // 删除单条记录
-  const handleDeleteRecord = useCallback((record: SleepRecord) => {
-    Alert.alert(
-      '确认删除',
-      `确定要删除 ${format(parseISO(record.bedTime), 'M月d日')} 的睡眠记录吗？`,
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: () => removeRecord(record.id),
-        },
-      ]
+      ],
+      { cancelable: true }
     );
   }, [removeRecord]);
 
@@ -265,39 +253,59 @@ export const HistoryScreen: React.FC = () => {
 
   // 渲染列表项
   const renderItem = useCallback(({ item, index }: { item: SleepRecord; index: number }) => {
-    const isSelected = selectedIds.includes(item.id);
-    
     return (
-      <View style={[styles.recordItem, isSelected && styles.recordItemSelected]}>
+      <View style={styles.recordItem}>
         <TouchableOpacity
           style={styles.recordContent}
           onPress={() => handleViewRecord(item)}
           onLongPress={() => handleLongPress(item)}
-          delayLongPress={500}
+          delayLongPress={400}
           activeOpacity={0.8}
         >
           <SleepCard record={item} compact onPress={() => handleViewRecord(item)} />
         </TouchableOpacity>
         
-        {isSelectionMode && (
-          <TouchableOpacity
-            style={[
-              styles.selectionIndicator,
-              isSelected && styles.selectionIndicatorActive,
-            ]}
-            onPress={() => toggleSelection(item.id)}
-          >
-            {isSelected && <Text style={styles.checkmark}>✓</Text>}
-          </TouchableOpacity>
-        )}
+        {/* 删除按钮 */}
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleLongPress(item)}
+          activeOpacity={0.6}
+        >
+          <Trash size={18} color={colors.error?.main || '#EF4444'} />
+        </TouchableOpacity>
       </View>
     );
-  }, [selectedIds, isSelectionMode, handleViewRecord, handleLongPress, toggleSelection]);
+  }, [handleViewRecord, handleLongPress]);
 
   // 渲染分组头部
   const renderSectionHeader = useCallback((title: string, count: number) => (
     <SectionHeader title={title} count={count} />
   ), []);
+
+  // 渲染带分组的列表
+  const renderGroupedList = useCallback(() => {
+    const elements: React.ReactElement[] = [];
+    
+    groupedRecords.forEach((group, groupIndex) => {
+      // 添加分组头部
+      elements.push(
+        <View key={`header-${group.title}`}>
+          {renderSectionHeader(group.title, group.data.length)}
+        </View>
+      );
+      
+      // 添加该分组的记录
+      group.data.forEach((record, recordIndex) => {
+        elements.push(
+          <View key={record.id}>
+            {renderItem({ item: record, index: recordIndex })}
+          </View>
+        );
+      });
+    });
+    
+    return elements;
+  }, [groupedRecords, renderItem, renderSectionHeader]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -308,53 +316,40 @@ export const HistoryScreen: React.FC = () => {
           { opacity: headerOpacity },
         ]}
       >
-        {isSelectionMode ? (
-          <>
-            <TouchableOpacity onPress={exitSelectionMode}>
-              <Text style={styles.headerAction}>取消</Text>
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>已选择 {selectedIds.length} 项</Text>
-            <TouchableOpacity onPress={handleDeleteSelected}>
-              <Text style={[styles.headerAction, styles.headerActionDanger]}>
-                删除
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <View>
-              <Text style={styles.headerTitle}>历史记录</Text>
-              <Text style={styles.headerSubtitle}>共 {totalCount} 条记录</Text>
-            </View>
-            <View style={styles.headerIcon}>
-              <History size={24} color={colors.primary[500]} />
-            </View>
-          </>
-        )}
+        <View>
+          <Text style={styles.headerTitle}>历史记录</Text>
+          <Text style={styles.headerSubtitle}>共 {localRecords.length} 条记录</Text>
+        </View>
+        <View style={styles.headerIcon}>
+          <History size={24} color={colors.primary[500]} />
+        </View>
       </Animated.View>
 
       {/* 筛选栏 */}
-      {!isSelectionMode && (
-        <View style={styles.filterBar}>
-          <View style={styles.filterChips}>
-            <FilterChip
-              label="全部"
-              isActive={selectedFilter === 'all'}
-              onPress={() => setSelectedFilter('all')}
-            />
-            <FilterChip
-              label="最近7天"
-              isActive={selectedFilter === 'week'}
-              onPress={() => setSelectedFilter('week')}
-            />
-            <FilterChip
-              label="最近30天"
-              isActive={selectedFilter === 'month'}
-              onPress={() => setSelectedFilter('month')}
-            />
-          </View>
+      <View style={styles.filterBar}>
+        <View style={styles.filterChips}>
+          <FilterChip
+            label="全部"
+            isActive={selectedFilter === 'all'}
+            onPress={() => setSelectedFilter('all')}
+          />
+          <FilterChip
+            label="最近7天"
+            isActive={selectedFilter === 'week'}
+            onPress={() => setSelectedFilter('week')}
+          />
+          <FilterChip
+            label="最近30天"
+            isActive={selectedFilter === 'month'}
+            onPress={() => setSelectedFilter('month')}
+          />
         </View>
-      )}
+      </View>
+
+      {/* 长按提示 */}
+      <View style={styles.tipContainer}>
+        <Text style={styles.tipText}>长按记录可删除，点击可查看详情</Text>
+      </View>
 
       {/* 记录列表 */}
       {filteredRecords.length > 0 ? (
@@ -369,8 +364,6 @@ export const HistoryScreen: React.FC = () => {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
-          onEndReached={onLoadMore}
-          onEndReachedThreshold={0.5}
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
@@ -417,15 +410,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerAction: {
-    fontSize: fontSize.md,
-    fontWeight: '500',
-    color: colors.primary[500],
-    paddingHorizontal: spacing.sm,
-  },
-  headerActionDanger: {
-    color: colors.error.main,
-  },
   filterBar: {
     backgroundColor: '#FFFFFF',
     paddingVertical: spacing.md,
@@ -453,6 +437,18 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  tipContainer: {
+    backgroundColor: colors.primary[50],
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primary[100],
+  },
+  tipText: {
+    fontSize: fontSize.xs,
+    color: colors.primary[600],
+    textAlign: 'center',
   },
   listContent: {
     paddingTop: spacing.md,
@@ -483,31 +479,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-  },
-  recordItemSelected: {
-    backgroundColor: colors.primary[50],
+    paddingVertical: spacing.xs,
   },
   recordContent: {
     flex: 1,
   },
-  selectionIndicator: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.gray[300],
-    marginLeft: spacing.sm,
+  deleteButton: {
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  selectionIndicatorActive: {
-    backgroundColor: colors.primary[500],
-    borderColor: colors.primary[500],
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    marginLeft: spacing.sm,
   },
   separator: {
     height: 1,

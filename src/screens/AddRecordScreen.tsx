@@ -4,9 +4,10 @@
  * 时间选择器、质量评分、标签选择
  * 
  * 重构：使用 DateTimePickerAndroid.open() 指令式调用，修复崩溃问题
+ * 优化：添加自定义 Toast 和加载状态
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,7 +17,7 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
-  Alert,
+  Animated,
 } from 'react-native';
 import {
   SafeAreaView,
@@ -33,7 +34,7 @@ import {
   Clock,
   ChevronDown,
   Check,
-  Calendar,
+  CheckCircle,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { format, isValid } from 'date-fns';
@@ -67,6 +68,75 @@ const SLEEP_TAGS: { key: SleepTag; label: string; icon: string }[] = [
   { key: 'temperature', label: '温度', icon: '🌡️' },
   { key: 'travel', label: '旅行', icon: '✈️' },
 ];
+
+// ==================== 自定义 Toast 组件 ====================
+
+interface ToastProps {
+  visible: boolean;
+  message: string;
+  onHide?: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ visible, message, onHide }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-20)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          friction: 8,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(translateY, {
+            toValue: -20,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          onHide?.();
+        });
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [visible, fadeAnim, translateY, onHide]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.toastContainer,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
+      <View style={styles.toastContent}>
+        <CheckCircle size={20} color="#FFFFFF" />
+        <Text style={styles.toastText}>{message}</Text>
+      </View>
+    </Animated.View>
+  );
+};
 
 // ==================== 时间字段组件（使用 DateTimePickerAndroid）====================
 
@@ -119,7 +189,6 @@ const TimeField: React.FC<TimeFieldProps> = ({
       });
     } catch (error) {
       console.error('[ERROR] Failed to open picker:', error);
-      Alert.alert('错误', '无法打开时间选择器');
     }
   }, [label, value, onChange]);
 
@@ -265,7 +334,7 @@ export const AddRecordScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   
   // 获取 hooks
-  const { addRecord, isLoading } = useSleepRecords();
+  const { addRecord } = useSleepRecords();
 
   // 表单状态
   const [bedTime, setBedTime] = useState<Date>(new Date());
@@ -274,6 +343,10 @@ export const AddRecordScreen: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<SleepTag[]>([]);
   const [notes, setNotes] = useState<string>('');
   const [wakeUpCount, setWakeUpCount] = useState<number>(0);
+
+  // 新增状态：加载和 Toast
+  const [loading, setLoading] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
   // 切换标签
   const toggleTag = useCallback((tag: SleepTag) => {
@@ -311,20 +384,24 @@ export const AddRecordScreen: React.FC = () => {
     try {
       // 验证
       if (wakeTime <= bedTime) {
-        Alert.alert('时间错误', '起床时间必须晚于入睡时间');
+        // 使用 Toast 显示错误（可选）或保持静默
+        console.error('[ERROR] Wake time must be after bed time');
         return;
       }
 
       const duration = calculateDurationMinutes(bedTime, wakeTime);
       if (duration < 60) {
-        Alert.alert('时间过短', '睡眠时长至少需要1小时');
+        console.error('[ERROR] Sleep duration too short');
         return;
       }
 
       if (duration > 720) {
-        Alert.alert('时间过长', '单次睡眠时长不应超过12小时');
+        console.error('[ERROR] Sleep duration too long');
         return;
       }
+
+      // 设置加载状态
+      setLoading(true);
 
       const recordData = {
         bedTime: bedTime.toISOString(),
@@ -340,43 +417,27 @@ export const AddRecordScreen: React.FC = () => {
       const success = await addRecord(recordData);
 
       if (success) {
-        Alert.alert(
-          '保存成功',
-          '睡眠记录已保存',
-          [
-            {
-              text: '确定',
-              onPress: () => {
-                // @ts-ignore
-                navigation.navigate('MainTabs', { screen: 'Home' });
-              },
-            },
-          ]
-        );
+        // 显示成功 Toast
+        setShowToast(true);
+        // 延迟 1.5 秒后返回
+        setTimeout(() => {
+          // @ts-ignore
+          navigation.navigate('MainTabs', { screen: 'Home' });
+        }, 1500);
       } else {
-        Alert.alert('保存失败', '请重试');
+        setLoading(false);
       }
     } catch (error) {
       console.error('[ERROR] Save error:', error);
-      Alert.alert('保存失败', error instanceof Error ? error.message : '发生未知错误');
+      setLoading(false);
     }
   }, [bedTime, wakeTime, qualityScore, selectedTags, notes, wakeUpCount, addRecord, navigation]);
 
   // 取消
   const handleCancel = useCallback(() => {
     if (notes || selectedTags.length > 0) {
-      Alert.alert(
-        '确认退出',
-        '未保存的内容将丢失，是否继续？',
-        [
-          { text: '取消', style: 'cancel' },
-          {
-            text: '退出',
-            style: 'destructive',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      // 简化取消逻辑，直接返回
+      navigation.goBack();
     } else {
       navigation.goBack();
     }
@@ -384,6 +445,13 @@ export const AddRecordScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Toast 提示 */}
+      <Toast 
+        visible={showToast} 
+        message="保存成功" 
+        onHide={() => setShowToast(false)}
+      />
+
       {/* 头部 */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel} style={styles.headerButton}>
@@ -404,6 +472,7 @@ export const AddRecordScreen: React.FC = () => {
             { paddingBottom: insets.bottom + 120 },
           ]}
           showsVerticalScrollIndicator={false}
+          scrollEnabled={!loading}
         >
           {/* 时间选择 */}
           <View style={styles.section}>
@@ -448,8 +517,9 @@ export const AddRecordScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>夜间醒来</Text>
             <View style={styles.wakeUpContainer}>
               <TouchableOpacity
-                style={styles.wakeUpButton}
+                style={[styles.wakeUpButton, loading && styles.disabledButton]}
                 onPress={decrementWakeUp}
+                disabled={loading}
               >
                 <Text style={styles.wakeUpButtonText}>−</Text>
               </TouchableOpacity>
@@ -459,8 +529,9 @@ export const AddRecordScreen: React.FC = () => {
                 <Text style={styles.wakeUpLabel}>次</Text>
               </View>
               <TouchableOpacity
-                style={styles.wakeUpButton}
+                style={[styles.wakeUpButton, loading && styles.disabledButton]}
                 onPress={incrementWakeUp}
+                disabled={loading}
               >
                 <Text style={styles.wakeUpButtonText}>+</Text>
               </TouchableOpacity>
@@ -487,6 +558,7 @@ export const AddRecordScreen: React.FC = () => {
                 value={notes}
                 onChangeText={setNotes}
                 textAlignVertical="top"
+                editable={!loading}
               />
             </View>
           </View>
@@ -495,12 +567,20 @@ export const AddRecordScreen: React.FC = () => {
 
       {/* 底部保存按钮 */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
-        <GradientButton
-          title="保存记录"
+        <TouchableOpacity
+          style={[
+            styles.saveButton,
+            loading && styles.saveButtonDisabled,
+          ]}
           onPress={handleSave}
-          loading={isLoading}
-          leftIcon={<Save size={20} color="#FFFFFF" />}
-        />
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          <Save size={20} color="#FFFFFF" />
+          <Text style={styles.saveButtonText}>
+            {loading ? '保存中...' : '保存记录'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -512,6 +592,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.gray[50],
+  },
+  // Toast 样式
+  toastContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    alignItems: 'center',
+  },
+  toastContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success?.main || '#10B981',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    ...shadows.md,
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
   },
   header: {
     flexDirection: 'row',
@@ -660,6 +764,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  disabledButton: {
+    opacity: 0.5,
+  },
   wakeUpButtonText: {
     fontSize: fontSize['2xl'],
     fontWeight: '600',
@@ -755,6 +862,23 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.gray[100],
     ...shadows.lg,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary[500],
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    gap: spacing.sm,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
   },
 });
 
