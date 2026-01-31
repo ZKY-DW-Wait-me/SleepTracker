@@ -1,10 +1,6 @@
 /**
- * SleepTracker - AddRecordScreen
- * 添加/编辑睡眠记录页面
- * 时间选择器、质量评分、标签选择
- * 
- * 重构：使用 DateTimePickerAndroid.open() 指令式调用，修复崩溃问题
- * 优化：添加自定义 Toast 和加载状态
+ * SleepTracker - SleepEditScreen
+ * 编辑睡眠记录页面
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
@@ -24,7 +20,6 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-// 使用 DateTimePickerAndroid 指令式 API
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import {
   Sun,
@@ -37,11 +32,11 @@ import {
   Check,
   CheckCircle,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
-import { format, isValid } from 'date-fns';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { format, parseISO, isValid } from 'date-fns';
 
 // 组件
-import { QualityRating, GradientButton } from '../components';
+import { QualityRating } from '../components';
 
 // Hooks
 import { useSleepRecords } from '../hooks';
@@ -53,7 +48,9 @@ import { calculateDurationMinutes } from '../utils/dateUtils';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 
 // 类型
-import { SleepTag } from '../types';
+import { RootStackParamList, SleepTag } from '../types';
+
+type SleepEditRouteProp = RouteProp<RootStackParamList, 'SleepEdit'>;
 
 // ==================== 常量定义 ====================
 
@@ -140,7 +137,7 @@ const Toast: React.FC<ToastProps> = ({ visible, message, onHide }) => {
   );
 };
 
-// ==================== 时间字段组件（使用 DateTimePickerAndroid）====================
+// ==================== 时间字段组件 ====================
 
 interface TimeFieldProps {
   label: string;
@@ -157,31 +154,24 @@ const TimeField: React.FC<TimeFieldProps> = ({
   onChange,
   mode = 'bedtime',
 }) => {
-  // 使用 DateTimePickerAndroid.open 指令式打开时间选择器
   const handlePress = useCallback(() => {
     try {
-      console.log('[DEBUG] Opening time picker for:', label);
-      
-      // 先打开日期选择
       DateTimePickerAndroid.open({
         value: value,
         mode: 'date',
-        minimumDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7天前
-        maximumDate: new Date(),
+        minimumDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        maximumDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
         onChange: (dateEvent, selectedDate) => {
           if (dateEvent.type === 'set' && selectedDate) {
-            // 日期选择后，打开时间选择
             DateTimePickerAndroid.open({
               value: selectedDate,
               mode: 'time',
               is24Hour: true,
               onChange: (timeEvent, selectedTime) => {
                 if (timeEvent.type === 'set' && selectedTime) {
-                  // 合并日期和时间
                   const finalDate = new Date(selectedDate);
                   finalDate.setHours(selectedTime.getHours());
                   finalDate.setMinutes(selectedTime.getMinutes());
-                  console.log('[DEBUG] Final datetime selected:', finalDate.toISOString());
                   onChange(finalDate);
                 }
               },
@@ -192,7 +182,7 @@ const TimeField: React.FC<TimeFieldProps> = ({
     } catch (error) {
       console.error('[ERROR] Failed to open picker:', error);
     }
-  }, [label, value, onChange]);
+  }, [value, onChange]);
 
   const displayValue = format(value, 'HH:mm');
   const dateValue = format(value, 'MM月dd日');
@@ -200,7 +190,6 @@ const TimeField: React.FC<TimeFieldProps> = ({
   return (
     <View style={styles.timeFieldContainer}>
       <Text style={styles.timeFieldLabel}>{label}</Text>
-      
       <TouchableOpacity
         style={[
           styles.timeFieldButton,
@@ -220,7 +209,7 @@ const TimeField: React.FC<TimeFieldProps> = ({
   );
 };
 
-// ==================== 单个标签项组件 ====================
+// ==================== 标签项组件 ====================
 
 interface TagItemProps {
   tag: typeof SLEEP_TAGS[0];
@@ -282,17 +271,13 @@ const TagSelector: React.FC<TagSelectorProps> = ({ selectedTags, onToggleTag }) 
 interface StatsPreviewProps {
   bedTime: Date;
   wakeTime: Date;
-  qualityScore: number;
 }
 
-const StatsPreview: React.FC<StatsPreviewProps> = ({
-  bedTime,
-  wakeTime,
-}) => {
+const StatsPreview: React.FC<StatsPreviewProps> = ({ bedTime, wakeTime }) => {
   let duration = 0;
   let hours = 0;
   let minutes = 0;
-  
+
   try {
     duration = calculateDurationMinutes(bedTime, wakeTime);
     hours = Math.floor(duration / 60);
@@ -331,12 +316,14 @@ const StatsPreview: React.FC<StatsPreviewProps> = ({
 
 // ==================== 主页面组件 ====================
 
-export const AddRecordScreen: React.FC = () => {
+export const SleepEditScreen: React.FC = () => {
   const navigation = useNavigation();
+  const route = useRoute<SleepEditRouteProp>();
   const insets = useSafeAreaInsets();
-  
-  // 获取 hooks
-  const { addRecord } = useSleepRecords();
+  const { records, editRecord } = useSleepRecords();
+
+  const { recordId } = route.params || {};
+  const record = records.find((r) => r.id === recordId);
 
   // 表单状态
   const [bedTime, setBedTime] = useState<Date>(new Date());
@@ -346,69 +333,57 @@ export const AddRecordScreen: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [wakeUpCount, setWakeUpCount] = useState<number>(0);
 
-  // 新增状态：加载和 Toast
+  // UI 状态
   const [loading, setLoading] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
+  // 加载记录数据
+  useEffect(() => {
+    if (record) {
+      setBedTime(parseISO(record.bedTime));
+      setWakeTime(parseISO(record.wakeTime));
+      setQualityScore(record.qualityScore);
+      setSelectedTags(record.tags || []);
+      setNotes(record.notes || '');
+      setWakeUpCount(record.wakeUpCount || 0);
+    }
+  }, [record]);
+
   // 切换标签
   const toggleTag = useCallback((tag: SleepTag) => {
-    setSelectedTags(prev =>
-      prev.includes(tag)
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   }, []);
 
-  // 增加醒来次数
+  // 增加/减少醒来次数
   const incrementWakeUp = useCallback(() => {
-    setWakeUpCount(prev => prev + 1);
+    setWakeUpCount((prev) => prev + 1);
   }, []);
 
-  // 减少醒来次数
   const decrementWakeUp = useCallback(() => {
-    setWakeUpCount(prev => Math.max(0, prev - 1));
+    setWakeUpCount((prev) => Math.max(0, prev - 1));
   }, []);
 
-  // 处理床时间变化
-  const handleBedTimeChange = useCallback((date: Date) => {
-    console.log('[DEBUG] Bed time changed:', date.toISOString());
-    setBedTime(date);
-  }, []);
-
-  // 处理起床时间变化
-  const handleWakeTimeChange = useCallback((date: Date) => {
-    console.log('[DEBUG] Wake time changed:', date.toISOString());
-    setWakeTime(date);
-  }, []);
-
-  // 保存记录
+  // 保存修改
   const handleSave = useCallback(async () => {
-    console.log('Save button pressed');
+    if (!record) return;
+
     try {
-      // 验证
       if (wakeTime <= bedTime) {
-        console.error('[ERROR] Wake time must be after bed time');
         Alert.alert('时间错误', '起床时间必须晚于入睡时间');
         return;
       }
 
       const duration = calculateDurationMinutes(bedTime, wakeTime);
-      if (duration < 60) {
-        console.error('[ERROR] Sleep duration too short');
-        Alert.alert('时间过短', '睡眠时长至少需要1小时');
+      if (duration < 60 || duration > 720) {
+        Alert.alert('时间异常', '睡眠时长应在 1-12 小时之间');
         return;
       }
 
-      if (duration > 720) {
-        console.error('[ERROR] Sleep duration too long');
-        Alert.alert('时间过长', '单次睡眠时长不应超过12小时');
-        return;
-      }
-
-      // 设置加载状态
       setLoading(true);
 
-      const recordData = {
+      const updateData = {
         bedTime: bedTime.toISOString(),
         wakeTime: wakeTime.toISOString(),
         qualityScore,
@@ -416,24 +391,14 @@ export const AddRecordScreen: React.FC = () => {
         notes,
         tags: selectedTags,
       };
-      
-      console.log('[DEBUG] Saving record:', JSON.stringify(recordData, null, 2));
 
-      const success = await addRecord(recordData);
+      const success = await editRecord({ id: recordId!, ...updateData });
 
       if (success) {
-        // 显示成功 Toast
         setShowToast(true);
-        // 重置表单状态
-        setSelectedTags([]);
-        setWakeUpCount(0);
-        setNotes('');
-        setQualityScore(7);
-        // 延迟 1.5 秒后返回
         setTimeout(() => {
           setLoading(false);
-          // @ts-ignore
-          navigation.navigate('MainTabs', { screen: 'Home' });
+          navigation.goBack();
         }, 1500);
       } else {
         setLoading(false);
@@ -441,36 +406,57 @@ export const AddRecordScreen: React.FC = () => {
       }
     } catch (error) {
       console.error('[ERROR] Save error:', error);
-      Alert.alert('Error', error instanceof Error ? error.message : String(error));
+      Alert.alert('错误', '保存失败，请重试');
       setLoading(false);
     }
-  }, [bedTime, wakeTime, qualityScore, selectedTags, notes, wakeUpCount, addRecord, navigation]);
+  }, [
+    record,
+    recordId,
+    bedTime,
+    wakeTime,
+    qualityScore,
+    selectedTags,
+    notes,
+    wakeUpCount,
+    editRecord,
+    navigation,
+  ]);
 
   // 取消
   const handleCancel = useCallback(() => {
-    if (notes || selectedTags.length > 0) {
-      // 简化取消逻辑，直接返回
-      navigation.goBack();
-    } else {
-      navigation.goBack();
-    }
-  }, [notes, selectedTags, navigation]);
+    navigation.goBack();
+  }, [navigation]);
+
+  if (!record) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleCancel} style={styles.headerButton}>
+            <X size={24} color={colors.gray[600]} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>编辑记录</Text>
+          <View style={styles.headerButton} />
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>记录不存在或已被删除</Text>
+          <TouchableOpacity style={styles.emptyButton} onPress={handleCancel}>
+            <Text style={styles.emptyButtonText}>返回</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Toast 提示 */}
-      <Toast 
-        visible={showToast} 
-        message="保存成功" 
-        onHide={() => setShowToast(false)}
-      />
+      <Toast visible={showToast} message="保存成功" onHide={() => setShowToast(false)} />
 
       {/* 头部 */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancel} style={styles.headerButton}>
           <X size={24} color={colors.gray[600]} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>记录睡眠</Text>
+        <Text style={styles.headerTitle}>编辑记录</Text>
         <View style={styles.headerButton} />
       </View>
 
@@ -495,25 +481,21 @@ export const AddRecordScreen: React.FC = () => {
                 label="入睡时间"
                 icon={<Moon size={20} color={colors.primary[500]} />}
                 value={bedTime}
-                onChange={handleBedTimeChange}
+                onChange={setBedTime}
                 mode="bedtime"
               />
               <TimeField
                 label="起床时间"
                 icon={<Sun size={20} color={colors.warning.main} />}
                 value={wakeTime}
-                onChange={handleWakeTimeChange}
+                onChange={setWakeTime}
                 mode="waketime"
               />
             </View>
           </View>
 
           {/* 统计预览 */}
-          <StatsPreview
-            bedTime={bedTime}
-            wakeTime={wakeTime}
-            qualityScore={qualityScore}
-          />
+          <StatsPreview bedTime={bedTime} wakeTime={wakeTime} />
 
           {/* 质量评分 */}
           <View style={styles.section}>
@@ -552,10 +534,7 @@ export const AddRecordScreen: React.FC = () => {
           </View>
 
           {/* 标签选择 */}
-          <TagSelector
-            selectedTags={selectedTags}
-            onToggleTag={toggleTag}
-          />
+          <TagSelector selectedTags={selectedTags} onToggleTag={toggleTag} />
 
           {/* 备注输入 */}
           <View style={styles.section}>
@@ -581,18 +560,13 @@ export const AddRecordScreen: React.FC = () => {
       {/* 底部保存按钮 */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
         <TouchableOpacity
-          style={[
-            styles.saveButton,
-            loading && styles.saveButtonDisabled,
-          ]}
+          style={[styles.saveButton, loading && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={loading}
           activeOpacity={0.8}
         >
           <Save size={20} color="#FFFFFF" />
-          <Text style={styles.saveButtonText}>
-            {loading ? '保存中...' : '保存记录'}
-          </Text>
+          <Text style={styles.saveButtonText}>{loading ? '保存中...' : '保存修改'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -606,7 +580,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.gray[50],
   },
-  // Toast 样式
   toastContainer: {
     position: 'absolute',
     top: 60,
@@ -893,6 +866,28 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
   },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  emptyText: {
+    fontSize: fontSize.md,
+    color: colors.gray[500],
+    marginBottom: spacing.lg,
+  },
+  emptyButton: {
+    backgroundColor: colors.primary[500],
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
 });
 
-export default AddRecordScreen;
+export default SleepEditScreen;

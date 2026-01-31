@@ -12,7 +12,6 @@ import {
   PanResponder,
   Animated,
   Dimensions,
-  GestureResponderEvent,
   PanResponderGestureState,
 } from 'react-native';
 import { Star, Frown, Meh, Smile, Laugh } from 'lucide-react-native';
@@ -21,7 +20,6 @@ import { getSleepQualityFromScore, getSleepQualityText, getSleepQualityColor } f
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SLIDER_WIDTH = SCREEN_WIDTH - spacing.lg * 4;
-const STEP_WIDTH = SLIDER_WIDTH / 10;
 
 // ==================== 属性定义 ====================
 
@@ -57,10 +55,13 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
   size = 'medium',
   showLabel = true,
 }) => {
-  // 动画值
-  const [animatedValue] = useState(new Animated.Value(value));
-  const [currentValue, setCurrentValue] = useState(value);
+  // 内部状态 - 使用 ref 避免闭包问题
+  const currentValueRef = useRef(value);
+  const [displayValue, setDisplayValue] = useState(value);
   const [isDragging, setIsDragging] = useState(false);
+  
+  // 动画值
+  const animatedValue = useRef(new Animated.Value(value)).current;
   
   // 计算尺寸
   const sizes = {
@@ -69,18 +70,33 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
     large: { slider: SLIDER_WIDTH, thumb: 36, icon: 48, font: fontSize['3xl'] },
   }[size];
 
-  // 更新内部值
+  // 同步外部 value 变化（只在初始化或外部主动改变时）
   useEffect(() => {
-    setCurrentValue(value);
-    animatedValue.setValue(value);
-  }, [value]);
+    // 只有在非拖拽状态下才响应外部 value 变化
+    if (!isDragging && value !== currentValueRef.current) {
+      currentValueRef.current = value;
+      setDisplayValue(value);
+      animatedValue.setValue(value);
+    }
+  }, [value, isDragging, animatedValue]);
 
   // 计算步进值
   const calculateStep = useCallback((x: number): number => {
     const stepWidth = sizes.slider / 10;
-    const step = Math.round(x / stepWidth);
+    const relativeX = Math.max(0, Math.min(x, sizes.slider));
+    const step = Math.round(relativeX / stepWidth);
     return Math.max(1, Math.min(10, step));
   }, [sizes.slider]);
+
+  // 更新值的核心函数
+  const updateValue = useCallback((newValue: number) => {
+    if (newValue !== currentValueRef.current) {
+      currentValueRef.current = newValue;
+      setDisplayValue(newValue);
+      animatedValue.setValue(newValue);
+      onValueChange(newValue);
+    }
+  }, [onValueChange, animatedValue]);
 
   // 手势响应器
   const panResponder = useRef(
@@ -88,52 +104,48 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
       onStartShouldSetPanResponder: () => !disabled,
       onMoveShouldSetPanResponder: () => !disabled,
       
-      onPanResponderGrant: () => {
+      onPanResponderGrant: (evt) => {
         setIsDragging(true);
-        // 触摸反馈动画
-        Animated.spring(animatedValue, {
-          toValue: currentValue,
-          friction: 5,
-          tension: 40,
-          useNativeDriver: true,
-        }).start();
+        // 计算点击位置对应的值
+        const { locationX } = evt.nativeEvent;
+        const newValue = calculateStep(locationX);
+        updateValue(newValue);
       },
       
-      onPanResponderMove: (_, gestureState: PanResponderGestureState) => {
-        const newValue = calculateStep(gestureState.moveX - spacing.lg * 2);
-        if (newValue !== currentValue) {
-          setCurrentValue(newValue);
-          animatedValue.setValue(newValue);
-          onValueChange(newValue);
-        }
+      onPanResponderMove: (evt, gestureState: PanResponderGestureState) => {
+        // 使用 gestureState.moveX 相对于屏幕的位置，需要计算相对于滑块的偏移
+        const { moveX } = gestureState;
+        // 滑块在屏幕上的偏移量估算
+        const sliderOffset = (SCREEN_WIDTH - sizes.slider) / 2;
+        const relativeX = moveX - sliderOffset;
+        const newValue = calculateStep(relativeX);
+        updateValue(newValue);
       },
       
       onPanResponderRelease: () => {
         setIsDragging(false);
-        // 吸附到最近的整数
-        const finalValue = Math.round(currentValue);
-        setCurrentValue(finalValue);
-        onValueChange(finalValue);
+        // 确保最终值是整数
+        const finalValue = Math.round(currentValueRef.current);
+        updateValue(finalValue);
+      },
+      
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+        const finalValue = Math.round(currentValueRef.current);
+        updateValue(finalValue);
       },
     })
   ).current;
 
   // 获取当前质量信息
-  const quality = getSleepQualityFromScore(currentValue);
+  const quality = getSleepQualityFromScore(displayValue);
   const qualityText = getSleepQualityText(quality);
   const qualityColor = getSleepQualityColor(quality);
 
   // 计算滑块位置
   const thumbPosition = animatedValue.interpolate({
     inputRange: [1, 10],
-    outputRange: [0, sizes.slider - sizes.thumb],
-    extrapolate: 'clamp',
-  });
-
-  // 计算发光强度
-  const glowOpacity = animatedValue.interpolate({
-    inputRange: [1, 10],
-    outputRange: [0.3, 1],
+    outputRange: [sizes.thumb / 2, sizes.slider - sizes.thumb / 2],
     extrapolate: 'clamp',
   });
 
@@ -144,7 +156,7 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
         <View style={styles.labelContainer}>
           <Text style={styles.label}>睡眠质量评分</Text>
           <View style={[styles.qualityBadge, { backgroundColor: qualityColor + '20' }]}>
-            <MoodIcon score={currentValue} size={16} />
+            <MoodIcon score={displayValue} size={16} />
             <Text style={[styles.qualityText, { color: qualityColor }]}>
               {qualityText}
             </Text>
@@ -154,7 +166,7 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
 
       {/* 分数显示 */}
       <View style={styles.scoreContainer}>
-        <Animated.View
+        <View
           style={[
             styles.scoreCircle,
             {
@@ -163,22 +175,21 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
               borderRadius: (sizes.icon + 24) / 2,
               borderColor: qualityColor,
               shadowColor: qualityColor,
-              shadowOpacity: isDragging ? 0.8 : 0.4,
             },
           ]}
         >
-          <MoodIcon score={currentValue} size={sizes.icon} />
-        </Animated.View>
+          <MoodIcon score={displayValue} size={sizes.icon} />
+        </View>
         
         <View style={styles.scoreTextContainer}>
-          <Animated.Text
+          <Text
             style={[
               styles.scoreValue,
               { fontSize: sizes.font, color: qualityColor },
             ]}
           >
-            {currentValue}
-          </Animated.Text>
+            {displayValue}
+          </Text>
           <Text style={styles.scoreMax}>/10</Text>
         </View>
       </View>
@@ -213,7 +224,7 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
               style={[
                 styles.tick,
                 {
-                  backgroundColor: index < currentValue ? qualityColor : colors.gray[300],
+                  backgroundColor: index < displayValue ? qualityColor : colors.gray[300],
                 },
               ]}
             />
@@ -229,9 +240,9 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
               height: sizes.thumb,
               borderRadius: sizes.thumb / 2,
               left: thumbPosition,
+              marginLeft: -sizes.thumb / 2,
               backgroundColor: qualityColor,
               shadowColor: qualityColor,
-              shadowOpacity: isDragging ? 0.9 : 0.5,
               transform: [{ scale: isDragging ? 1.2 : 1 }],
             },
           ]}
@@ -243,7 +254,7 @@ export const QualityRating: React.FC<QualityRatingProps> = ({
       {/* 描述文本 */}
       {showLabel && (
         <Text style={styles.description}>
-          {getScoreDescription(currentValue)}
+          {getScoreDescription(displayValue)}
         </Text>
       )}
     </View>
@@ -307,6 +318,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 10,
+    shadowOpacity: 0.4,
     elevation: 5,
   },
   scoreTextContainer: {
@@ -322,7 +334,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   sliderContainer: {
-    height: 40,
+    height: 50,
     justifyContent: 'center',
   },
   track: {
@@ -358,8 +370,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,
+    shadowOpacity: 0.5,
     elevation: 5,
-    top: 6,
+    top: 9,
   },
   description: {
     fontSize: fontSize.sm,

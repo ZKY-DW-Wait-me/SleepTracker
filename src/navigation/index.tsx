@@ -25,6 +25,8 @@ import {
   StatisticsScreen,
   HistoryScreen,
   SettingsScreen,
+  SleepDetailScreen,
+  SleepEditScreen,
 } from '../screens';
 
 // 类型
@@ -119,6 +121,22 @@ export const AppNavigator = () => {
           options={{
             animationEnabled: true,
             animationTypeForReplace: 'push',
+          }}
+        />
+        <Stack.Screen 
+          name="SleepDetail" 
+          component={SleepDetailScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen 
+          name="SleepEdit" 
+          component={SleepEditScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
           }}
         />
       </Stack.Navigator>

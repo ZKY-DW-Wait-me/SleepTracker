@@ -8,3 +8,5 @@ export { AddRecordScreen } from './AddRecordScreen';
 export { StatisticsScreen } from './StatisticsScreen';
 export { HistoryScreen } from './HistoryScreen';
 export { SettingsScreen } from './SettingsScreen';
+export { SleepDetailScreen } from './SleepDetailScreen';
+export { SleepEditScreen } from './SleepEditScreen';

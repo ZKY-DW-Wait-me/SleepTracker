@@ -1,97 +1,84 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 🌙 SleepTracker (睡眠追踪器)
 
-# Getting Started
+> 您的个人睡眠健康管家，基于 React Native 开发，安全、隐私、无广告。
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## 📱 给用户的使用指南 (User Guide)
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### 🎯 产品介绍
+SleepTracker 是一款专注于睡眠记录与分析的工具。我们相信，优质的睡眠始于精准的记录。不同于市面上臃肿的 App，SleepTracker 坚持**数据本地化**，所有记录存储在您手机的加密数据库中，无需联网，保护您的隐私。
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### ✨ 核心功能
+*   **⚡ 极速记录**：只需几秒即可记录入睡、起床时间及睡眠质量。
+*   **📊 深度分析**：自动计算睡眠时长、生成周趋势图表，识别您的睡眠规律。
+*   **🏷️ 影响因素**：标记睡前行为（如饮酒、运动、压力），帮您找到失眠元凶。
+*   **🌓 昼夜模式**：清爽的日间模式与护眼的夜间模式自动切换。
+*   **🔒 数据安全**：内置 SQLite 数据库，数据完全掌握在自己手中。
 
-```sh
-# Using npm
+### 📥 如何安装
+1.  下载最新版本的 `.apk` 文件（当前最新：**v1.1.3**）。
+2.  在 Android 手机上打开文件并允许安装。
+3.  **注意**：如果您之前安装过旧版本，建议先卸载旧版本再安装新版，以确保数据库结构更新。
+
+---
+
+## 🛠️ 给开发者的文档 (Developer Guide)
+
+### 📋 技术栈
+该项目采用现代 React Native 架构开发，注重性能与代码规范。
+
+*   **核心框架**: React Native 0.83.1 (New Architecture Enabled)
+*   **语言**: TypeScript 5.8.3
+*   **状态管理**: Redux Toolkit (全局状态) + React Redux
+*   **数据持久化**: SQLite (本地数据库) + AsyncStorage (轻量配置)
+*   **导航**: React Navigation v7 (Native Stack)
+*   **UI 组件**: Lucide Icons, SVG Charts, Lottie
+
+### 🚀 快速开始
+
+**环境要求**
+*   Node.js >= 20
+*   Android Studio / Xcode
+*   Java/JDK 17
+
+**安装依赖**
+```bash
+npm install
+# 或
+yarn install
+```
+
+**运行项目**
+```bash
+# 启动 Metro 服务
 npm start
 
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+# 运行 Android
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+### 📁 项目结构
+```text
+src/
+├── components/   # 通用 UI 组件 (QualityRating, SleepCard等)
+├── screens/      # 页面级组件 (Home, History, Detail, Edit等)
+├── navigation/   # 路由配置
+├── store/        # Redux Slice 定义
+├── services/     # 数据库操作层 (SQLite)
+├── hooks/        # 自定义 Hooks (useSleepRecords等)
+└── utils/        # 工具函数
 ```
 
-Then, and every time you update your native dependencies, run:
+### 📝 版本历史
 
-```sh
-bundle exec pod install
-```
+**v1.1.3 (Current)**
+*   ✅ **修复**：睡眠质量滑块评分回弹 Bug。
+*   ✅ **新增**：完整的睡眠记录详情页 (Detail Screen)。
+*   ✅ **新增**：记录编辑功能 (Edit Screen)，支持修改备注与评分。
+*   ✅ **修复**：保存记录后表单状态重置问题。
+*   ✅ **优化**：统一了应用内与安装包的版本号显示。
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+**v1.0.9**
+*   ⚡ **重构**：数据存储层从 AsyncStorage 迁移至 SQLite 数据库，彻底解决数据丢失问题。
+*   🎨 **UI**：启用全新的应用图标设计。
