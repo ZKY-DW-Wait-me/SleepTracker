@@ -18,6 +18,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Animated,
+  Alert,
 } from 'react-native';
 import {
   SafeAreaView,
@@ -122,6 +123,7 @@ const Toast: React.FC<ToastProps> = ({ visible, message, onHide }) => {
 
   return (
     <Animated.View
+      pointerEvents="box-none"
       style={[
         styles.toastContainer,
         {
@@ -381,22 +383,25 @@ export const AddRecordScreen: React.FC = () => {
 
   // 保存记录
   const handleSave = useCallback(async () => {
+    console.log('Save button pressed');
     try {
       // 验证
       if (wakeTime <= bedTime) {
-        // 使用 Toast 显示错误（可选）或保持静默
         console.error('[ERROR] Wake time must be after bed time');
+        Alert.alert('时间错误', '起床时间必须晚于入睡时间');
         return;
       }
 
       const duration = calculateDurationMinutes(bedTime, wakeTime);
       if (duration < 60) {
         console.error('[ERROR] Sleep duration too short');
+        Alert.alert('时间过短', '睡眠时长至少需要1小时');
         return;
       }
 
       if (duration > 720) {
         console.error('[ERROR] Sleep duration too long');
+        Alert.alert('时间过长', '单次睡眠时长不应超过12小时');
         return;
       }
 
@@ -421,14 +426,17 @@ export const AddRecordScreen: React.FC = () => {
         setShowToast(true);
         // 延迟 1.5 秒后返回
         setTimeout(() => {
+          setLoading(false);
           // @ts-ignore
           navigation.navigate('MainTabs', { screen: 'Home' });
         }, 1500);
       } else {
         setLoading(false);
+        Alert.alert('保存失败', '请重试');
       }
     } catch (error) {
       console.error('[ERROR] Save error:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : String(error));
       setLoading(false);
     }
   }, [bedTime, wakeTime, qualityScore, selectedTags, notes, wakeUpCount, addRecord, navigation]);
