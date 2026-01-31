@@ -7,22 +7,21 @@
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
         
-        <!-- 日期选择器主题色 -->
-        <item name="android:datePickerDialogTheme">@style/DatePickerTheme</item>
+        <!-- 日期选择器主题 - 使用 Dialog.Theme 修复白字问题 -->
+        <item name="android:datePickerDialogTheme">@style/Dialog.Theme</item>
         <item name="android:timePickerDialogTheme">@style/TimePickerTheme</item>
         
         <!-- EditText 样式 -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
     
-    <!-- 日期选择器主题 -->
-    <style name="DatePickerTheme" parent="Theme.AppCompat.Light.Dialog">
-        <item name="colorPrimary">@color/colorPrimary</item>
-        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
-        <item name="colorAccent">@color/colorAccent</item>
-        <item name="android:headerBackground">@color/datePickerHeaderBackground</item>
-        <item name="android:windowBackground">@android:color/white</item>
-        <item name="android:textColorPrimary">@color/datePickerHeaderText</item>
+    <!-- 日期选择器主题 - 修复日历数字为黑色 -->
+    <style name="Dialog.Theme" parent="Theme.AppCompat.Light.Dialog">
+        <item name="colorAccent">#3B82F6</item>                    <!-- 选中日期的蓝色背景 -->
+        <item name="android:textColorPrimary">#000000</item>      <!-- 日期数字改为黑色 -->
+        <item name="android:textColorSecondary">#757575</item>   <!-- 星期几改为灰色 -->
+        <item name="android:windowBackground">#FFFFFF</item>     <!-- 确保背景是纯白 -->
+        <item name="android:headerBackground">#3B82F6</item>     <!-- 头部背景蓝色 -->
     </style>
     
     <!-- 时间选择器主题 -->

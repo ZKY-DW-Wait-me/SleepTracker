@@ -3,7 +3,7 @@
  * 首页：睡眠概览、进度圆环、快捷记录、趋势图
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
