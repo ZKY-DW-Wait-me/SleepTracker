@@ -464,14 +464,14 @@ export const SettingsScreen: React.FC = () => {
             <SettingItem
               icon={<Info size={20} color={colors.gray[500]} />}
               title="版本"
-              value="1.0.2"
+              value="1.1.0"
             />
           </View>
         </View>
 
         {/* 版权信息 */}
         <Text style={styles.copyright}>
-          SleepTracker v1.0.2{'\n'}
+          SleepTracker v1.1.0{'\n'}
           您的专业睡眠健康管家
         </Text>
       </ScrollView>
