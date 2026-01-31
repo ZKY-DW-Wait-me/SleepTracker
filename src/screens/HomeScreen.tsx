@@ -3,7 +3,7 @@
  * 首页：睡眠概览、进度圆环、快捷记录、趋势图
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,7 @@ import {
   BedDouble,
   AlarmClock,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { format, subDays, parseISO } from 'date-fns';
 
 // 组件
@@ -37,7 +37,8 @@ import { SleepCard, GradientButton } from '../components';
 import { useSleepRecords } from '../hooks';
 
 // 工具
-import { formatDuration, getRelativeDateText, getWeekdayText } from '../utils/dateUtils';
+import { formatDuration, getWeekdayText } from '../utils/dateUtils';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 样式
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
@@ -46,6 +47,9 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 import { SleepRecord } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// AsyncStorage key
+const STORAGE_KEY = 'sleepRecords';
 
 // ==================== 环形进度组件 ====================
 
@@ -273,37 +277,68 @@ export const HomeScreen: React.FC = () => {
   
   // 状态
   const [refreshing, setRefreshing] = useState(false);
-  const [headerOpacity] = useState(new Animated.Value(0));
+  const [headerOpacity] = useState(new Animated.Value(1));
   
-  // Hooks
-  const {
-    records,
-    todayRecord,
-    statistics,
-    loadTodayRecord,
-    loadRecentRecords,
-    isLoading,
-  } = useSleepRecords();
+  // 本地状态（替代 useSleepRecords 的数据）
+  const [todayRecord, setTodayRecord] = useState<SleepRecord | null>(null);
+  const [records, setRecords] = useState<SleepRecord[]>([]);
 
-  // 初始化数据
-  useEffect(() => {
-    loadTodayRecord();
-    loadRecentRecords(7);
-    
-    // 头部动画
-    Animated.timing(headerOpacity, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
+  // 从 AsyncStorage 直接读取今日数据
+  const loadTodayData = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const allRecords: SleepRecord[] = JSON.parse(stored);
+        
+        // 按时间倒序排列
+        const sorted = allRecords.sort((a, b) => 
+          new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
+        );
+        
+        setRecords(sorted);
+        
+        // 查找今日记录（bedTime 是今天的）
+        const today = new Date().toDateString();
+        const foundToday = sorted.find(r => 
+          new Date(r.bedTime).toDateString() === today
+        );
+        
+        setTodayRecord(foundToday || null);
+        console.log('[DEBUG] HomeScreen loaded, todayRecord:', foundToday ? 'found' : 'none');
+      } else {
+        setRecords([]);
+        setTodayRecord(null);
+      }
+    } catch (error) {
+      console.error('[ERROR] Failed to load today data:', error);
+    }
   }, []);
+
+  // 使用 useFocusEffect 确保每次进入页面都强制刷新数据
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[DEBUG] HomeScreen focused, reloading data...');
+      loadTodayData();
+      
+      // 头部动画
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      
+      return () => {
+        // 清理工作（如果需要）
+      };
+    }, [loadTodayData])
+  );
 
   // 下拉刷新
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadTodayRecord(), loadRecentRecords(7)]);
+    await loadTodayData();
     setRefreshing(false);
-  }, []);
+  }, [loadTodayData]);
 
   // 获取昨晚记录（非今天的第一条）
   const lastNightRecord = useMemo(() => {

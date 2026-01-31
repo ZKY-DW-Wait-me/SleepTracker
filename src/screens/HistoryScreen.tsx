@@ -2,9 +2,11 @@
  * SleepTracker - HistoryScreen
  * 历史记录页面：展示所有睡眠记录列表
  * 支持：下拉刷新、筛选、长按删除单条记录
+ * 
+ * 修复：使用 useFocusEffect 强制刷新，修复删除后 UI 不更新问题
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -22,16 +24,11 @@ import {
 } from 'react-native-safe-area-context';
 import {
   History,
-  Calendar,
-  Filter,
-  Trash2,
-  ChevronRight,
-  Search,
-  Archive,
   Trash,
+  CheckCircle,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
-import { format, parseISO, subDays, isSameDay } from 'date-fns';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { format, parseISO, subDays } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 组件
@@ -75,7 +72,7 @@ const EmptyState: React.FC<{ onAddPress: () => void }> = ({ onAddPress }) => {
   return (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIcon}>
-        <Archive size={48} color={colors.primary[300]} />
+        <History size={48} color={colors.primary[300]} />
       </View>
       <Text style={styles.emptyTitle}>暂无睡眠记录</Text>
       <Text style={styles.emptyText}>开始记录您的第一晚睡眠吧</Text>
@@ -112,6 +109,21 @@ const FilterChip: React.FC<FilterChipProps> = ({ label, isActive, onPress }) => 
   );
 };
 
+// ==================== 删除成功提示组件 ====================
+
+const DeleteToast: React.FC<{ visible: boolean }> = ({ visible }) => {
+  if (!visible) return null;
+  
+  return (
+    <View style={styles.deleteToast} pointerEvents="none">
+      <View style={styles.deleteToastContent}>
+        <CheckCircle size={16} color="#FFFFFF" />
+        <Text style={styles.deleteToastText}>删除成功</Text>
+      </View>
+    </View>
+  );
+};
+
 // ==================== 主页面组件 ====================
 
 export const HistoryScreen: React.FC = () => {
@@ -121,33 +133,53 @@ export const HistoryScreen: React.FC = () => {
   // 状态
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'week' | 'month'>('all');
-  const [headerOpacity] = useState(new Animated.Value(0));
+  const [headerOpacity] = useState(new Animated.Value(1));
   const [localRecords, setLocalRecords] = useState<SleepRecord[]>([]);
+  const [showDeleteToast, setShowDeleteToast] = useState(false);
 
   // Hooks
   const {
-    records,
-    totalCount,
     loadRecords,
     removeRecord,
-    isLoading,
   } = useSleepRecords();
 
-  // 同步本地记录状态
-  useEffect(() => {
-    setLocalRecords(records);
-  }, [records]);
-
-  // 初始化
-  useEffect(() => {
-    loadRecords({ pagination: { page: 1, pageSize: 50 } });
-    
-    Animated.timing(headerOpacity, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
+  // 从 AsyncStorage 直接读取数据（强制刷新）
+  const loadDataFromStorage = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // 按时间倒序排列
+        const sorted = parsed.sort((a: SleepRecord, b: SleepRecord) => 
+          new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
+        );
+        setLocalRecords(sorted);
+      } else {
+        setLocalRecords([]);
+      }
+    } catch (error) {
+      console.error('[ERROR] Failed to load records:', error);
+    }
   }, []);
+
+  // 使用 useFocusEffect 确保每次进入页面都强制刷新数据
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[DEBUG] HistoryScreen focused, reloading data...');
+      loadDataFromStorage();
+      
+      // 头部动画
+      Animated.timing(headerOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      
+      return () => {
+        // 清理工作（如果需要）
+      };
+    }, [])
+  );
 
   // 过滤记录
   const filteredRecords = useMemo(() => {
@@ -189,9 +221,9 @@ export const HistoryScreen: React.FC = () => {
   // 下拉刷新
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadRecords({ pagination: { page: 1, pageSize: 50 } });
+    await loadDataFromStorage();
     setRefreshing(false);
-  }, [loadRecords]);
+  }, [loadDataFromStorage]);
 
   // 查看详情
   const handleViewRecord = useCallback((record: SleepRecord) => {
@@ -199,7 +231,15 @@ export const HistoryScreen: React.FC = () => {
     navigation.navigate('SleepDetail', { recordId: record.id });
   }, [navigation]);
 
-  // 长按删除单条记录
+  // 显示删除成功提示
+  const showDeleteSuccess = useCallback(() => {
+    setShowDeleteToast(true);
+    setTimeout(() => {
+      setShowDeleteToast(false);
+    }, 1500);
+  }, []);
+
+  // 长按删除单条记录（修复版）
   const handleLongPress = useCallback((record: SleepRecord) => {
     const recordDate = format(parseISO(record.bedTime), 'M月d日');
     
@@ -216,6 +256,8 @@ export const HistoryScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              console.log('[DEBUG] Deleting record:', record.id);
+              
               // 1. 从 AsyncStorage 读取记录
               const stored = await AsyncStorage.getItem(STORAGE_KEY);
               if (!stored) return;
@@ -227,23 +269,30 @@ export const HistoryScreen: React.FC = () => {
               
               // 3. 写回 AsyncStorage
               await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedRecords));
+              console.log('[DEBUG] AsyncStorage updated');
               
-              // 4. 更新本地状态
-              setLocalRecords(prev => prev.filter(r => r.id !== record.id));
+              // 4. 【关键】立即更新本地状态，强制触发列表重绘
+              setLocalRecords(updatedRecords.sort((a, b) => 
+                new Date(b.bedTime).getTime() - new Date(a.bedTime).getTime()
+              ));
               
-              // 5. 同时调用 hook 的删除方法保持同步
-              await removeRecord(record.id);
+              // 5. 同时调用 hook 的删除方法保持同步（不阻塞）
+              removeRecord(record.id).catch(() => {});
               
-              console.log('[DEBUG] Deleted record:', record.id);
+              // 6. 显示删除成功提示
+              showDeleteSuccess();
+              
+              console.log('[DEBUG] Record deleted successfully:', record.id);
             } catch (error) {
               console.error('[ERROR] Failed to delete record:', error);
+              Alert.alert('删除失败', '请重试');
             }
           },
         },
       ],
       { cancelable: true }
     );
-  }, [removeRecord]);
+  }, [removeRecord, showDeleteSuccess]);
 
   // 前往添加记录
   const handleAddRecord = useCallback(() => {
@@ -252,7 +301,7 @@ export const HistoryScreen: React.FC = () => {
   }, [navigation]);
 
   // 渲染列表项
-  const renderItem = useCallback(({ item, index }: { item: SleepRecord; index: number }) => {
+  const renderItem = useCallback(({ item }: { item: SleepRecord }) => {
     return (
       <View style={styles.recordItem}>
         <TouchableOpacity
@@ -277,38 +326,11 @@ export const HistoryScreen: React.FC = () => {
     );
   }, [handleViewRecord, handleLongPress]);
 
-  // 渲染分组头部
-  const renderSectionHeader = useCallback((title: string, count: number) => (
-    <SectionHeader title={title} count={count} />
-  ), []);
-
-  // 渲染带分组的列表
-  const renderGroupedList = useCallback(() => {
-    const elements: React.ReactElement[] = [];
-    
-    groupedRecords.forEach((group, groupIndex) => {
-      // 添加分组头部
-      elements.push(
-        <View key={`header-${group.title}`}>
-          {renderSectionHeader(group.title, group.data.length)}
-        </View>
-      );
-      
-      // 添加该分组的记录
-      group.data.forEach((record, recordIndex) => {
-        elements.push(
-          <View key={record.id}>
-            {renderItem({ item: record, index: recordIndex })}
-          </View>
-        );
-      });
-    });
-    
-    return elements;
-  }, [groupedRecords, renderItem, renderSectionHeader]);
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* 删除成功提示 */}
+      <DeleteToast visible={showDeleteToast} />
+
       {/* 头部 */}
       <Animated.View
         style={[
@@ -366,6 +388,7 @@ export const HistoryScreen: React.FC = () => {
           }
           showsVerticalScrollIndicator={false}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          extraData={localRecords} // 确保列表在数据变化时重新渲染
         />
       ) : (
         <EmptyState onAddPress={handleAddRecord} />
@@ -380,6 +403,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.gray[50],
+  },
+  deleteToast: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    alignItems: 'center',
+  },
+  deleteToastContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success?.main || '#10B981',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    ...shadows.md,
+  },
+  deleteToastText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
   },
   header: {
     flexDirection: 'row',
