@@ -2,7 +2,7 @@
  * SleepTracker - HistoryScreen
  * 历史记录页面：展示所有睡眠记录列表
  * 
- * 全量重构：彻底修复数据读取逻辑
+ * 修复：使用正确的数据库读取方式（通过 Redux）
  */
 
 import React, { useState, useCallback } from 'react';
@@ -27,10 +27,12 @@ import {
 } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { format, parseISO, subDays } from 'date-fns';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 组件
 import { SleepCard } from '../components';
+
+// Hooks - 使用正确的数据库 hook
+import { useSleepRecords } from '../hooks';
 
 // 样式
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
@@ -39,9 +41,6 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 import { SleepRecord } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// AsyncStorage key - 必须与保存时使用的 key 一致
-const STORAGE_KEY = 'sleepRecords';
 
 // ==================== 月份分组头部 ====================
 
@@ -125,40 +124,35 @@ export const HistoryScreen: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   
-  // 核心状态：记录列表
-  const [records, setRecords] = useState<SleepRecord[]>([]);
+  // 使用正确的 hook - 从 Redux/SQLite 读取数据
+  const {
+    records,
+    totalCount,
+    loadRecords,
+    removeRecord,
+    isLoading,
+  } = useSleepRecords();
+  
+  // 本地状态
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'week' | 'month'>('all');
   const [showDeleteToast, setShowDeleteToast] = useState(false);
 
-  // ========== 核心数据读取逻辑（重写）==========
+  // ========== 核心数据加载逻辑（使用数据库）==========
   const loadData = useCallback(async () => {
-    try {
-      console.log('[DEBUG] HistoryScreen: Loading data from AsyncStorage...');
-      const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
-      console.log('[DEBUG] HistoryScreen: Raw data:', jsonValue?.substring(0, 100));
-      
-      const data = jsonValue != null ? JSON.parse(jsonValue) : [];
-      
-      // 按日期倒序排列（最新的在前面）
-      data.sort((a: SleepRecord, b: SleepRecord) => {
-        const timeA = new Date(a.bedTime || a.startTime || 0).getTime();
-        const timeB = new Date(b.bedTime || b.startTime || 0).getTime();
-        return timeB - timeA;
-      });
-      
-      console.log('[DEBUG] HistoryScreen: Loaded records count:', data.length);
-      setRecords(data);
-    } catch (e) {
-      console.error('[ERROR] HistoryScreen: Failed to load records:', e);
-      setRecords([]);
-    }
-  }, []);
+    console.log('[DEBUG] HistoryScreen: Loading from database...');
+    const success = await loadRecords({
+      pagination: { page: 1, pageSize: 100 },
+      orderBy: 'bed_time',
+      orderDirection: 'DESC',
+    });
+    console.log('[DEBUG] HistoryScreen: Load result:', success, 'Records:', totalCount);
+  }, [loadRecords, totalCount]);
 
   // 使用 useFocusEffect 确保每次进入页面都刷新
   useFocusEffect(
     useCallback(() => {
-      console.log('[DEBUG] HistoryScreen: Screen focused, reloading...');
+      console.log('[DEBUG] HistoryScreen: Screen focused');
       loadData();
     }, [loadData])
   );
@@ -175,7 +169,7 @@ export const HistoryScreen: React.FC = () => {
     const now = new Date();
     
     return records.filter((record: SleepRecord) => {
-      const recordDate = parseISO(record.bedTime || record.startTime);
+      const recordDate = parseISO(record.bedTime);
       
       switch (selectedFilter) {
         case 'week':
@@ -196,7 +190,7 @@ export const HistoryScreen: React.FC = () => {
 
   // ========== 删除记录 ==========
   const handleDelete = useCallback((record: SleepRecord) => {
-    const recordDate = format(parseISO(record.bedTime || record.startTime), 'M月d日');
+    const recordDate = format(parseISO(record.bedTime), 'M月d日');
     
     Alert.alert(
       '删除记录？',
@@ -208,24 +202,14 @@ export const HistoryScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // 1. 读取当前数据
-              const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
-              const allRecords = jsonValue != null ? JSON.parse(jsonValue) : [];
-              
-              // 2. 过滤掉要删除的记录
-              const updatedRecords = allRecords.filter((r: SleepRecord) => r.id !== record.id);
-              
-              // 3. 保存回 AsyncStorage
-              await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedRecords));
-              
-              // 4. 立即更新本地状态（关键！）
-              setRecords(updatedRecords);
-              
-              // 5. 显示成功提示
-              setShowDeleteToast(true);
-              setTimeout(() => setShowDeleteToast(false), 1500);
-              
-              console.log('[DEBUG] HistoryScreen: Deleted record:', record.id);
+              const success = await removeRecord(record.id);
+              if (success) {
+                setShowDeleteToast(true);
+                setTimeout(() => setShowDeleteToast(false), 1500);
+                console.log('[DEBUG] HistoryScreen: Deleted record:', record.id);
+              } else {
+                Alert.alert('删除失败', '请重试');
+              }
             } catch (error) {
               console.error('[ERROR] HistoryScreen: Failed to delete:', error);
               Alert.alert('删除失败', '请重试');
@@ -235,7 +219,7 @@ export const HistoryScreen: React.FC = () => {
       ],
       { cancelable: true }
     );
-  }, []);
+  }, [removeRecord]);
 
   // ========== 前往添加记录 ==========
   const handleAddRecord = useCallback(() => {
@@ -270,7 +254,7 @@ export const HistoryScreen: React.FC = () => {
 
   // ========== 调试输出 ==========
   console.log('[DEBUG] HistoryScreen: Rendering records count:', records.length);
-  console.log('[DEBUG] HistoryScreen: Filtered records count:', filteredRecords.length);
+  console.log('[DEBUG] HistoryScreen: Total count from store:', totalCount);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -281,7 +265,7 @@ export const HistoryScreen: React.FC = () => {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>历史记录</Text>
-          <Text style={styles.headerSubtitle}>共 {records.length} 条记录</Text>
+          <Text style={styles.headerSubtitle}>共 {totalCount} 条记录</Text>
         </View>
         <View style={styles.headerIcon}>
           <History size={24} color={colors.primary[500]} />

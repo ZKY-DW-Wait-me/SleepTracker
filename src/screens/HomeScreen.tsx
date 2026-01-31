@@ -2,7 +2,7 @@
  * SleepTracker - HomeScreen
  * 首页：睡眠概览、进度圆环、快捷记录、趋势图
  * 
- * 全量重构：修复统计数据计算逻辑
+ * 修复：使用正确的数据库读取方式（通过 Redux）
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
@@ -31,10 +31,12 @@ import {
 } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { format, parseISO } from 'date-fns';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 组件
 import { SleepCard, GradientButton } from '../components';
+
+// Hooks - 使用正确的数据库 hook
+import { useSleepRecords } from '../hooks';
 
 // 工具
 import { formatDuration, getWeekdayText } from '../utils/dateUtils';
@@ -46,9 +48,6 @@ import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 import { SleepRecord } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// AsyncStorage key
-const STORAGE_KEY = 'sleepRecords';
 
 // ==================== 环形进度组件 ====================
 
@@ -186,43 +185,34 @@ export const HomeScreen: React.FC = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   
-  // 核心状态
-  const [allRecords, setAllRecords] = useState<SleepRecord[]>([]);
-  const [todayRecord, setTodayRecord] = useState<SleepRecord | null>(null);
+  // 使用正确的 hook - 从 Redux/SQLite 读取数据
+  const {
+    records,
+    todayRecord,
+    totalCount,
+    loadRecords,
+    isLoading,
+  } = useSleepRecords();
+  
+  // 本地状态
   const [refreshing, setRefreshing] = useState(false);
   const [sleepGoal] = useState(480); // 8小时目标
 
-  // ========== 核心数据读取与计算逻辑（重写）==========
+  // ========== 核心数据加载逻辑（使用数据库）==========
   const loadData = useCallback(async () => {
-    try {
-      console.log('[DEBUG] HomeScreen: Loading data...');
-      const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
-      const records = jsonValue != null ? JSON.parse(jsonValue) : [];
-      
-      console.log('[DEBUG] HomeScreen: Total records loaded:', records.length);
-      
-      // 保存所有记录
-      setAllRecords(records);
-      
-      // 查找今日记录
-      const today = new Date().toDateString();
-      const foundToday = records.find((r: SleepRecord) => 
-        new Date(r.bedTime || r.startTime).toDateString() === today
-      );
-      setTodayRecord(foundToday || null);
-      
-      console.log('[DEBUG] HomeScreen: Today record:', foundToday ? 'found' : 'none');
-    } catch (e) {
-      console.error('[ERROR] HomeScreen: Failed to load data:', e);
-      setAllRecords([]);
-      setTodayRecord(null);
-    }
-  }, []);
+    console.log('[DEBUG] HomeScreen: Loading from database...');
+    await loadRecords({
+      pagination: { page: 1, pageSize: 100 },
+      orderBy: 'bed_time',
+      orderDirection: 'DESC',
+    });
+    console.log('[DEBUG] HomeScreen: Loaded records count:', records.length);
+  }, [loadRecords, records.length]);
 
   // 使用 useFocusEffect 确保每次进入页面都刷新
   useFocusEffect(
     useCallback(() => {
-      console.log('[DEBUG] HomeScreen: Screen focused, reloading...');
+      console.log('[DEBUG] HomeScreen: Screen focused');
       loadData();
     }, [loadData])
   );
@@ -234,22 +224,22 @@ export const HomeScreen: React.FC = () => {
     setRefreshing(false);
   }, [loadData]);
 
-  // ========== 统计数据计算（基于所有历史记录）==========
+  // ========== 统计数据计算（基于所有记录）==========
   
   // 记录天数 = 所有记录的数量
-  const recordCount = allRecords.length;
+  const recordCount = totalCount;
   
-  // 平均睡眠时长 = 所有记录时长总和 / 记录条数
+  // 平均睡眠时长
   const avgDuration = useMemo(() => {
-    if (allRecords.length === 0) return 0;
-    const total = allRecords.reduce((sum, r) => sum + (r.duration || 0), 0);
-    return Math.round(total / allRecords.length);
-  }, [allRecords]);
+    if (records.length === 0) return 0;
+    const total = records.reduce((sum, r) => sum + (r.duration || 0), 0);
+    return Math.round(total / records.length);
+  }, [records]);
   
   // 连续达标天数
   const streakDays = useMemo(() => {
     let streak = 0;
-    for (const record of allRecords) {
+    for (const record of records) {
       if ((record.duration || 0) >= 420 && (record.qualityScore || 0) >= 6) {
         streak++;
       } else {
@@ -257,22 +247,22 @@ export const HomeScreen: React.FC = () => {
       }
     }
     return streak;
-  }, [allRecords]);
+  }, [records]);
 
   // 获取昨晚记录（非今天的第一条）
   const lastNightRecord = useMemo(() => {
     const today = new Date().toDateString();
-    return allRecords.find(r => 
-      new Date(r.bedTime || r.startTime).toDateString() !== today
+    return records.find(r => 
+      new Date(r.bedTime).toDateString() !== today
     );
-  }, [allRecords]);
+  }, [records]);
 
   // 准备趋势图数据
   const trendData = useMemo(() => {
-    const last7Days = allRecords.slice(0, 7);
+    const last7Days = records.slice(0, 7);
     const data = last7Days.map(r => r.duration || 0);
     const labels = last7Days.map(r => 
-      format(parseISO(r.bedTime || r.startTime), 'MM/dd')
+      format(parseISO(r.bedTime), 'MM/dd')
     );
     
     while (data.length < 7) {
@@ -284,7 +274,7 @@ export const HomeScreen: React.FC = () => {
       data: data.slice(0, 7).reverse(), 
       labels: labels.slice(0, 7).reverse() 
     };
-  }, [allRecords]);
+  }, [records]);
 
   // ========== 导航处理 ==========
   const handleAddRecord = useCallback(() => {
@@ -304,7 +294,7 @@ export const HomeScreen: React.FC = () => {
 
   // ========== 调试输出 ==========
   console.log('[DEBUG] HomeScreen: Rendering with recordCount:', recordCount);
-  console.log('[DEBUG] HomeScreen: avgDuration:', avgDuration);
+  console.log('[DEBUG] HomeScreen: Today record:', todayRecord ? 'found' : 'none');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -367,7 +357,7 @@ export const HomeScreen: React.FC = () => {
           />
         </View>
 
-        {/* 快捷统计 - 基于所有历史记录 */}
+        {/* 快捷统计 - 基于所有记录 */}
         <View style={styles.statsSection}>
           <StatItem
             icon={<BedDouble size={20} color={colors.primary[500]} />}
@@ -409,7 +399,7 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {/* 最近7天趋势 */}
-        {allRecords.length > 1 && (
+        {records.length > 1 && (
           <View style={styles.trendSection}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>睡眠趋势</Text>
