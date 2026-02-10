@@ -480,12 +480,14 @@ export type RootStackParamList = {
   MainTabs: undefined;
   SleepDetail: { recordId: string };
   SleepEdit: { recordId?: string };
+  PrivacyPolicy: undefined;
   StatisticsDetail: { period: StatisticsPeriod };
   SettingsDetail: { section: string };
   GoalSetting: undefined;
   ReminderSetting: undefined;
   DataExport: undefined;
   About: undefined;
+  License: undefined;
 };
 
 // ==================== 组件 Props 类型 ====================

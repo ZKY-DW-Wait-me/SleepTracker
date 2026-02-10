@@ -11,6 +11,9 @@
     <color name="datePickerSelected">#3B82F6</color>
     <color name="datePickerSelectedText">#FFFFFF</color>
     
+    <!-- 启动页背景色 - 与 JS 端 AppInitializer 的 #0F172A 一致 -->
+    <color name="splashBackground">#0F172A</color>
+
     <!-- 系统组件主题色 -->
     <color name="androidx_core_ripple_material_light">#1F3B82F6</color>
     <color name="androidx_core_secondary_text_default_material_light">#3B82F6</color>

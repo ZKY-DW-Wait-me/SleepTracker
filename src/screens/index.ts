@@ -10,3 +10,6 @@ export { HistoryScreen } from './HistoryScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { SleepDetailScreen } from './SleepDetailScreen';
 export { SleepEditScreen } from './SleepEditScreen';
+export { PrivacyPolicyScreen } from './PrivacyPolicyScreen';
+export { AboutScreen } from './AboutScreen';
+export { LicenseScreen } from './LicenseScreen';

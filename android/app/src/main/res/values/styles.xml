@@ -6,6 +6,10 @@
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
+        <!-- 启动窗口背景色，与 JS 端启动页一致，避免白屏闪烁 -->
+        <item name="android:windowBackground">@color/splashBackground</item>
+        <item name="android:statusBarColor">@color/splashBackground</item>
+        <item name="android:navigationBarColor">@color/splashBackground</item>
         
         <!-- 日期选择器主题 - 使用 Dialog.Theme 修复白字问题 -->
         <item name="android:datePickerDialogTheme">@style/Dialog.Theme</item>

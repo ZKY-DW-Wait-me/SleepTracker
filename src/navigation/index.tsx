@@ -27,6 +27,9 @@ import {
   SettingsScreen,
   SleepDetailScreen,
   SleepEditScreen,
+  PrivacyPolicyScreen,
+  AboutScreen,
+  LicenseScreen,
 } from '../screens';
 
 // 类型
@@ -131,9 +134,33 @@ export const AppNavigator = () => {
             presentation: 'card',
           }}
         />
-        <Stack.Screen 
-          name="SleepEdit" 
+        <Stack.Screen
+          name="SleepEdit"
           component={SleepEditScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
+          name="PrivacyPolicy"
+          component={PrivacyPolicyScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
+          name="About"
+          component={AboutScreen}
+          options={{
+            animationEnabled: true,
+            presentation: 'card',
+          }}
+        />
+        <Stack.Screen
+          name="License"
+          component={LicenseScreen}
           options={{
             animationEnabled: true,
             presentation: 'card',

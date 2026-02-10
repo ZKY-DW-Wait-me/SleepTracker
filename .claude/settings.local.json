@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew assembleRelease)",
+      "Bash(D:)",
+      "Bash(gradlew.bat assembleRelease)",
+      "Bash(cmd.exe /c \"cd /d D:\\\\vscode\\\\project_sleetracker\\\\SleepTracker\\\\android && gradlew.bat assembleRelease\")",
+      "Bash(powershell.exe -Command \"Set-Location ''D:\\\\vscode\\\\project_sleetracker\\\\SleepTracker\\\\android''; .\\\\gradlew.bat assembleRelease 2>&1\")",
+      "Bash(powershell.exe:*)"
+    ]
+  }
+}

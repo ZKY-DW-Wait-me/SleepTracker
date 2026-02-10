@@ -35,6 +35,7 @@ import {
   BarChart3,
 } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import { StackNavigationProp } from '@react-navigation/stack';
 
 // Hooks
 import { useSettings } from '../hooks';
@@ -46,7 +47,10 @@ import { exportAllData, clearAllData, resetDatabase } from '../services/database
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles';
 
 // 类型
-import { SleepGoal } from '../types';
+import { SleepGoal, RootStackParamList } from '../types';
+
+// 配置
+import AppConfig from '../config';
 
 // ==================== 设置项组件 ====================
 
@@ -233,7 +237,7 @@ const GoalSettingModal: React.FC<GoalSettingModalProps> = ({
 // ==================== 主页面组件 ====================
 
 export const SettingsScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   
   // 状态
@@ -463,17 +467,12 @@ export const SettingsScreen: React.FC = () => {
           <View style={styles.sectionContent}>
             <SettingItem
               icon={<Info size={20} color={colors.gray[500]} />}
-              title="版本"
-              value="1.1.3"
+              title="关于 SleepTracker"
+              value={`v${AppConfig.APP_VERSION}`}
+              onPress={() => navigation.navigate('About')}
             />
           </View>
         </View>
-
-        {/* 版权信息 */}
-        <Text style={styles.copyright}>
-          SleepTracker v1.1.3{'\n'}
-          您的专业睡眠健康管家
-        </Text>
       </ScrollView>
 
       {/* 目标设置模态框 */}
@@ -589,14 +588,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.gray[100],
     marginLeft: spacing.lg + 36 + spacing.md,
-  },
-  copyright: {
-    fontSize: fontSize.sm,
-    color: colors.gray[400],
-    textAlign: 'center',
-    marginTop: spacing.xl,
-    marginBottom: spacing.xl,
-    lineHeight: 20,
   },
   modalOverlay: {
     flex: 1,
